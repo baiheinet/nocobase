@@ -10,6 +10,9 @@
   "homepage": "https://docs.nocobase.com/handbook/block-map",
   "homepage.zh-CN": "https://docs-cn.nocobase.com/handbook/block-map",
   "devDependencies": {
+    "@antv/l7": "^2.x",
+    "@antv/l7-maps": "^2.x",
+    "@antv/l7-draw": "^3.x",
     "@amap/amap-jsapi-loader": "^1.0.1",
     "@amap/amap-jsapi-types": "^0.0.10",
     "@ant-design/icons": "5.x",

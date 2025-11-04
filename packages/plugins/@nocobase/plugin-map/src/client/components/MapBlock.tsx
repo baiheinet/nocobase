@@ -12,10 +12,12 @@ import React, { useMemo } from 'react';
 import { useMapTranslation } from '../locale';
 import { AMapBlock } from './AMap';
 import { GoogleMapsBlock } from './GoogleMaps';
+import { MapboxBlock } from './Mapbox';
 
 const MapBlocks = {
   amap: AMapBlock,
   google: GoogleMapsBlock,
+  mapbox: MapboxBlock,
 };
 
 export const MapBlockComponent: React.FC<any> = withSkeletonComponent(

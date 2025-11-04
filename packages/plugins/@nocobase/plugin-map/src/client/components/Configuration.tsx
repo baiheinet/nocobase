@@ -15,7 +15,7 @@ import { MapConfigurationResourceKey, getSSKey, useMapConfiguration } from '../h
 import { useMapTranslation } from '../locale';
 
 interface BaseConfigurationProps {
-  type: 'amap' | 'google';
+  type: 'amap' | 'google' | 'mapbox';
 }
 const BaseConfiguration: React.FC<BaseConfigurationProps> = ({ type, children }) => {
   const { t } = useMapTranslation();
@@ -111,9 +111,25 @@ const GoogleMapConfiguration = () => {
   );
 };
 
+const MapboxConfiguration = () => {
+  const { t } = useMapTranslation();
+  return (
+    <BaseConfiguration type="mapbox">
+      <Form.Item
+        rules={[{ required: true, message: t('Access key is required') }]}
+        name="accessKey"
+        label={t('Access key')}
+      >
+        <TextAreaWithGlobalScope />
+      </Form.Item>
+    </BaseConfiguration>
+  );
+};
+
 const components = {
   amap: AMapConfiguration,
   google: GoogleMapConfiguration,
+  mapbox: MapboxConfiguration,
 };
 
 const routeList = MapTypes.map((item) => {

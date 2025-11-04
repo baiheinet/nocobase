@@ -12,6 +12,7 @@ import { generateNTemplate } from './locale';
 export const MapTypes = [
   { label: generateNTemplate('AMap'), value: 'amap' },
   { label: generateNTemplate('Google Maps'), value: 'google' },
+  { label: generateNTemplate('Mapbox (L7)'), value: 'mapbox' },
 ];
 
 export const selectedImage =
