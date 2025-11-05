@@ -24,8 +24,8 @@ export default {
             required: true,
             schema: {
               type: 'string',
-              default: 'amap',
-              enum: ['amap', 'google'],
+              default: 'mapbox',
+              enum: ['mapbox', 'google'],
             },
           },
         ],
@@ -77,8 +77,8 @@ export default {
           },
           type: {
             type: 'string',
-            default: 'amap',
-            enum: ['amap', 'google'],
+            default: 'mapbox',
+            enum: ['mapbox', 'google'],
           },
         },
       },

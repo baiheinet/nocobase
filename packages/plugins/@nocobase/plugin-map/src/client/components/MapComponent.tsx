@@ -7,28 +7,14 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
-import React, { useMemo } from 'react';
-import { useMapTranslation } from '../locale';
-import { AMapComponent } from './AMap';
-import { GoogleMapsComponent } from './GoogleMaps';
-import { MapboxComponent } from './Mapbox';
+import React from 'react';
+import { L7MapComponent } from './L7Map';
 
-const MapComponents = {
-  amap: AMapComponent,
-  google: GoogleMapsComponent,
-  mapbox: MapboxComponent,
-};
-
+/**
+ * Unified Map Component using L7
+ * Supports Mapbox, AMap (Gaode), and Google Maps
+ */
 export const MapComponent = React.forwardRef<any, any>((props, ref) => {
-  const { t } = useMapTranslation();
-  const { mapType } = props;
-  const Component = useMemo(() => {
-    return MapComponents[mapType];
-  }, [mapType]);
-
-  if (!Component) {
-    return <div>{t(`The ${mapType} cannot found`)}</div>;
-  }
-  return <Component ref={ref} {...props} />;
+  return <L7MapComponent ref={ref} {...props} />;
 });
 MapComponent.displayName = 'MapComponent';

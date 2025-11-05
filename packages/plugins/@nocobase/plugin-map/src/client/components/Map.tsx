@@ -10,12 +10,12 @@
 import { connect, mapReadPretty } from '@formily/react';
 import { css } from '@nocobase/client';
 import React from 'react';
-import { AMapComponentProps } from './AMap';
+import { L7MapComponentProps } from './L7Map';
 import Designer from './Designer';
 import { MapComponent } from './MapComponent';
 import ReadPretty from './ReadPretty';
 
-type MapProps = AMapComponentProps;
+type MapProps = L7MapComponentProps | any; // Support L7Map (mapbox) and legacy GoogleMaps props
 
 const className = css`
   height: 100%;

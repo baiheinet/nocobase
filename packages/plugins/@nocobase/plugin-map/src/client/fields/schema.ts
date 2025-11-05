@@ -48,7 +48,7 @@ export class CommonSchema extends CollectionFieldInterface {
         allowClear: false,
       },
       'x-disabled': '{{ isOverride || !createOnly }}',
-      default: 'amap',
+      default: 'mapbox',
       enum: MapTypes,
     },
   };

@@ -776,7 +776,7 @@
     eventemitter3 "^4.0.4"
     gl-matrix "^3.1.0"
 
-"@antv/l7-maps@2.23.0", "@antv/l7-maps@^2.x":
+"@antv/l7-maps@2.23.0":
   version "2.23.0"
   resolved "https://registry.npmmirror.com/@antv/l7-maps/-/l7-maps-2.23.0.tgz#eda91c45c98939c661be4a5b209003b4f2832c85"
   integrity sha512-SVwP8QbKawq3VRdZR/R8D87R762A69dFKefg/l3goxWTT1JXq4+sLUvovGdpgy1OlVQfFfu60tN61WAAjnNpug==

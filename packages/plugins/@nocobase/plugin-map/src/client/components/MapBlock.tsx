@@ -8,34 +8,18 @@
  */
 
 import { PopupContextProvider, withSkeletonComponent } from '@nocobase/client';
-import React, { useMemo } from 'react';
-import { useMapTranslation } from '../locale';
-import { AMapBlock } from './AMap';
-import { GoogleMapsBlock } from './GoogleMaps';
-import { MapboxBlock } from './Mapbox';
+import React from 'react';
+import { L7MapBlock } from './L7Map/Block';
 
-const MapBlocks = {
-  amap: AMapBlock,
-  google: GoogleMapsBlock,
-  mapbox: MapboxBlock,
-};
-
+/**
+ * Unified Map Block Component using L7
+ * Supports Mapbox, AMap (Gaode), and Google Maps
+ */
 export const MapBlockComponent: React.FC<any> = withSkeletonComponent(
   (props) => {
-    const { t } = useMapTranslation();
-    const { mapType } = props;
-
-    const Component = useMemo(() => {
-      return MapBlocks[mapType];
-    }, [mapType]);
-
-    if (!Component) {
-      return <div>{t(`The ${mapType} cannot found`)}</div>;
-    }
-
     return (
       <PopupContextProvider>
-        <Component {...props} />
+        <L7MapBlock {...props} />
       </PopupContextProvider>
     );
   },

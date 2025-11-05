@@ -7,10 +7,7 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
-export * from './AMap';
 export * from './Configuration';
-export * from './GoogleMaps';
-export * from './Mapbox';
 export * from './Map';
 export * from './MapBlock';
 export * from './MapComponent';
