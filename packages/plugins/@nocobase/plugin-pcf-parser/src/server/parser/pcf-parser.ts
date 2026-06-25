@@ -22,8 +22,7 @@ const COMPONENT_TYPES = new Set([
 function isComponentType(line: string): boolean {
   const word = line.split(/\s+/)[0];
   if (!word) return false;
-  const upper = word.toUpperCase();
-  return COMPONENT_TYPES.has(upper) || (word === upper && upper.length >= 2);
+  return COMPONENT_TYPES.has(word.toUpperCase());
 }
 
 export class PCFParser {
@@ -58,7 +57,7 @@ export class PCFParser {
       const parts = line.split(/\s+/);
       const value = parts.slice(1).join(' ');
       const key = kw.toLowerCase().replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-      (result.header as any)[key] = value;
+      result.header[key] = value;
     }
   }
 
@@ -253,7 +252,7 @@ export class PCFParser {
       };
     });
 
-    const componentRecords: any[] = [];
+    const componentRecords: ComponentRecord[] = [];
     for (const p of parseResult.pipelines) {
       for (const c of p.components) {
         const endpoints = (c.attributes['END-POINT'] || []).map(ep => {
@@ -303,18 +302,20 @@ function parseCoords(tokens: string[]): { x: number; y: number; z: number; bore?
   const y = parseFloat(tokens[1]);
   const z = parseFloat(tokens[2]);
   if (isNaN(x) || isNaN(y) || isNaN(z)) return null;
-  const result: any = { x, y, z };
+  const coords: { x: number; y: number; z: number; bore?: number } = { x, y, z };
   if (tokens.length >= 4) {
     const bore = parseFloat(tokens[3]);
-    if (!isNaN(bore)) result.bore = bore;
+    if (!isNaN(bore)) coords.bore = bore;
   }
-  return result;
+  return coords;
 }
 
 function parseAttrCoords(val: string | undefined): { x: number; y: number; z: number } | null {
   if (!val) return null;
   const tokens = val.split(/\s+/);
-  return parseCoords(tokens) as any;
+  const parsed = parseCoords(tokens);
+  if (!parsed) return null;
+  return { x: parsed.x, y: parsed.y, z: parsed.z };
 }
 
 const KNOWN_COMPONENT_ATTRS = new Set([
@@ -342,7 +343,28 @@ function getExtraComponentAttrs(attrs: Record<string, string[]>): Record<string,
   return Object.keys(extra).length > 0 ? extra : null;
 }
 
-function buildBOM(components: any[], materials: any[], sessionId: string): any[] {
+interface ComponentRecord {
+  componentType: string;
+  itemCode: string | null;
+  itemDescription: string | null;
+  pipelineReference: string;
+  [key: string]: unknown;
+}
+
+interface MaterialRecord {
+  itemCode: string;
+  description: string;
+  [key: string]: unknown;
+}
+
+interface BOMRecord {
+  sessionId: string;
+  itemCode: string;
+  description: string;
+  count: number;
+}
+
+function buildBOM(components: ComponentRecord[], materials: MaterialRecord[], sessionId: string): BOMRecord[] {
   const bomMap = new Map<string, { itemCode: string; description: string; count: number }>();
   for (const c of components) {
     const key = c.itemCode || c.componentType;
