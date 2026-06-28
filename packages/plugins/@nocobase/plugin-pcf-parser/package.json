@@ -10,7 +10,7 @@
   "homepage": "https://github.com/nocobase/nocobase/tree/main/packages/plugins/@nocobase/plugin-pcf-parser",
   "keywords": ["PCF", "Piping", "Pipeline", "ISOGEN"],
   "nocobase": {
-    "supportedVersions": ["1.x", "2.x"],
+    "supportedVersions": ["2.2.0-beta.7", "2.2.x", "2.x"],
     "editionLevel": 0
   },
   "devDependencies": {
