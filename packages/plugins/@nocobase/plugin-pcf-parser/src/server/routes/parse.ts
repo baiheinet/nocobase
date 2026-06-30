@@ -39,6 +39,15 @@ export async function parsePCF(context: Context, next: Next) {
     await db.getRepository('pcfBom').create({ values: record });
   }
 
+  await db.getRepository('pcfParseSessions').create({
+    values: {
+      sessionId,
+      unitsCoOrds: parseResult.header['unitsCoOrds'] || null,
+      unitsWeight: parseResult.header['unitsWeight'] || null,
+      fileName,
+    },
+  });
+
   context.body = {
     sessionId,
     fileName,

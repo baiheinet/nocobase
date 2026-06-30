@@ -18,6 +18,12 @@ export class PluginPCFParserClientV2 extends Plugin {
       aclSnippet: 'pm.pcf-parser',
       Component: PCFParserPage,
     });
+
+    this.flowEngine.registerModelLoaders({
+      Pcf3DBlockModel: {
+        loader: () => import('./flow/models/Pcf3DBlockModel'),
+      },
+    });
   }
 }
 
