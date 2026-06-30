@@ -40,20 +40,17 @@ export async function parsePCF(context: Context, next: Next) {
   }
 
   context.body = {
-    success: true,
-    data: {
-      sessionId,
-      fileName,
-      pipelines: pipelineRecords.length,
-      components: componentRecords.length,
-      materials: materialRecords.length,
-      bom: bomRecords.length,
-      errors: parseResult.errors,
-      pipelinesRef: pipelineRecords.map(p => ({
-        reference: p.pipelineReference,
-        componentCount: componentRecords.filter(c => c.pipelineReference === p.pipelineReference).length,
-      })),
-    },
+    sessionId,
+    fileName,
+    pipelines: pipelineRecords.length,
+    components: componentRecords.length,
+    materials: materialRecords.length,
+    bom: bomRecords.length,
+    errors: parseResult.errors,
+    pipelinesRef: pipelineRecords.map(p => ({
+      reference: p.pipelineReference,
+      componentCount: componentRecords.filter(c => c.pipelineReference === p.pipelineReference).length,
+    })),
   };
 
   await next();
