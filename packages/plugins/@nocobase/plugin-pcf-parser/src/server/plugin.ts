@@ -1,7 +1,13 @@
 import { Plugin } from '@nocobase/server';
+import { pcfPipelines, pcfComponents, pcfMaterials, pcfBom } from './collections';
 
 export class PluginPCFParserServer extends Plugin {
   async beforeLoad() {
+    this.app.db.collection(pcfPipelines);
+    this.app.db.collection(pcfComponents);
+    this.app.db.collection(pcfMaterials);
+    this.app.db.collection(pcfBom);
+
     this.app.resourcer.define({
       name: 'pcf-parser',
       actions: {
