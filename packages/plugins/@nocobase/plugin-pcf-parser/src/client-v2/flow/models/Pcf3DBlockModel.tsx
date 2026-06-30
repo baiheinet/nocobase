@@ -1,7 +1,8 @@
-import { DataBlockModel, tExpr } from '@nocobase/client-v2';
+import { DataBlockModel } from '@nocobase/client-v2';
 import React from 'react';
 import { Pcf3DViewer } from '../components/Pcf3DViewer';
 import { SessionSelect } from '../components/SessionSelect';
+import { tExpr } from '../../locale';
 
 export class Pcf3DBlockModel extends DataBlockModel {
   renderComponent() {
@@ -12,30 +13,30 @@ export class Pcf3DBlockModel extends DataBlockModel {
 }
 
 Pcf3DBlockModel.define({
-  label: tExpr('PCF 3D Viewer', { ns: 'pcf-parser' }),
+  label: tExpr('PCF 3D Viewer'),
 });
 
 Pcf3DBlockModel.registerFlow({
   key: 'pcf3dSettings',
-  title: tExpr('PCF 3D Settings', { ns: 'pcf-parser' }),
+  title: tExpr('PCF 3D Settings'),
   steps: {
     selectSession: {
-      title: tExpr('Select session', { ns: 'pcf-parser' }),
+      title: tExpr('Select session'),
       uiSchema: {
         sessionId: {
           type: 'string',
           'x-component': SessionSelect,
           'x-decorator': 'FormItem',
-          title: tExpr('Session', { ns: 'pcf-parser' }),
+          title: tExpr('Session'),
         },
         unitDisplay: {
           type: 'string',
           'x-component': 'Select',
           'x-decorator': 'FormItem',
-          title: tExpr('Unit display', { ns: 'pcf-parser' }),
+          title: tExpr('Unit display'),
           enum: [
-            { label: tExpr('Original', { ns: 'pcf-parser' }), value: 'original' },
-            { label: tExpr('Meter', { ns: 'pcf-parser' }), value: 'meter' },
+            { label: tExpr('Original'), value: 'original' },
+            { label: tExpr('Meter'), value: 'meter' },
           ],
           default: 'original',
         },
