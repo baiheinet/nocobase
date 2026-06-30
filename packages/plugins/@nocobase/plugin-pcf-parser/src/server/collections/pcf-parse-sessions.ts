@@ -38,7 +38,7 @@ export default {
       type: 'date',
       name: 'parsedAt',
       title: 'Parsed At',
-      defaultValue: '{{ new Date() }}',
+      defaultToCurrentTime: true,
     },
   ],
 } as CollectionOptions;
