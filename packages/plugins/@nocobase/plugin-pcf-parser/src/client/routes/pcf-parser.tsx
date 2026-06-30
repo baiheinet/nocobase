@@ -30,7 +30,7 @@ export function PCFParserPage() {
     setResult(null);
     try {
       const res = await api.request({
-        url: '/api/pcf-parser:parse',
+        url: 'pcf-parser:parse',
         method: 'POST',
         data: { fileName, rawContent: fileContent },
       });
