@@ -1,10 +1,10 @@
 import { tExpr as _tExpr } from '@nocobase/flow-engine';
 import { useTranslation } from 'react-i18next';
 
-export const NAMESPACE = 'pcf-parser';
+export const NAMESPACE = '@nocobase/plugin-pcf-parser';
 
-export function tExpr(key: string) {
-  return _tExpr(key, { ns: [NAMESPACE, 'client'] });
+export function tExpr(key: string, options?: Record<string, unknown>) {
+  return _tExpr(key, { ns: [NAMESPACE, 'client'], ...(options || {}) });
 }
 
 export function useT() {
