@@ -260,6 +260,26 @@ export class PCFParser {
           return parseCoords(tokens);
         });
 
+        // PCF stores pipe diameter in inches (NPS). PIPE-DIAMETER is
+        // preferred; BORE is the older alias. END-POINT may also carry
+        // a 4th value — if that one is already set, respect it. Convert
+        // to millimetres here so downstream rendering does not have to
+        // know about units.
+        const diameterInchesRaw =
+          c.attributes['PIPE-DIAMETER']?.[0] ??
+          c.attributes['BORE']?.[0] ??
+          null;
+        const diameterInchesNum = diameterInchesRaw != null ? parseFloat(diameterInchesRaw) : NaN;
+        const diameterMm =
+          !isNaN(diameterInchesNum) && diameterInchesNum > 0
+            ? diameterInchesNum * 25.4
+            : undefined;
+        if (diameterMm != null) {
+          for (const ep of endpoints) {
+            if (ep && ep.bore == null) ep.bore = diameterMm;
+          }
+        }
+
         componentRecords.push({
           sessionId,
           pipelineReference: p.pipelineReference,

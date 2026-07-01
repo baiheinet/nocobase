@@ -45,7 +45,14 @@ function defaultVisualRadius(length: number): number {
 function PipeMesh({ start, end, bore }: { start: THREE.Vector3; end: THREE.Vector3; bore?: number }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const { dir, length, mid } = computeOrientation(start, end);
-  const radius = (bore && bore > 0 ? bore : defaultVisualRadius(length)) / 2;
+  // Honour the actual bore when the PCF carries one (e.g. PIPE-DIAMETER
+  // in NPS-inches — the parser converts it to mm) — but clamp the visual
+  // diameter up to the length-proportional floor so a 50 mm NPS 2 pipe
+  // on a 34 m run doesn't collapse to sub-pixel. Actual wins when it's
+  // bigger than the floor.
+  const actualBore = bore && bore > 0 ? bore : 0;
+  const diameter = Math.max(actualBore, defaultVisualRadius(length));
+  const radius = diameter / 2;
 
   const quaternion = useMemo(() => {
     const q = new THREE.Quaternion();
