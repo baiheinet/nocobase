@@ -16,6 +16,11 @@ interface Pcf3DViewerProps {
   model: Pcf3DBlockModel;
 }
 
+interface SceneBounds {
+  center: [number, number, number];
+  offset: number;
+}
+
 function hasWebGL(): boolean {
   try {
     const canvas = document.createElement('canvas');
@@ -31,15 +36,17 @@ function hasWebGL(): boolean {
 function SceneContent({
   components,
   edges,
+  bounds,
 }: {
   components: { id: number; componentType: string; startPoint: { x: number; y: number; z: number; bore?: number } | null; endPoint: { x: number; y: number; z: number; bore?: number } | null; centrePoint: { x: number; y: number; z: number } | null; skey: string | null }[];
   edges: { id: string; fromId: number; toId: number; startPoint: { x: number; y: number; z: number }; endPoint: { x: number; y: number; z: number } }[];
+  bounds: SceneBounds;
 }) {
   return (
     <>
       <ambientLight intensity={0.5} />
       <directionalLight position={[10, 10, 5]} intensity={1} />
-      <OrbitControls makeDefault />
+      <OrbitControls makeDefault target={bounds.center} />
       {components.map((c) => (
         <ComponentNode key={c.id} component={c} />
       ))}
@@ -57,8 +64,10 @@ export const Pcf3DViewer: React.FC<Pcf3DViewerProps> = ({ sessionId, unitDisplay
 
   const effectiveUnitDisplay = localUnitDisplay || unitDisplay;
 
-  const cameraPosition = useMemo(() => {
-    if (components.length === 0) return [0, 200, 500] as [number, number, number];
+  const bounds = useMemo<SceneBounds>(() => {
+    if (components.length === 0) {
+      return { center: [0, 0, 0], offset: 200 };
+    }
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
     for (const c of components) {
@@ -77,8 +86,13 @@ export const Pcf3DViewer: React.FC<Pcf3DViewerProps> = ({ sessionId, unitDisplay
     const cz = (minZ + maxZ) / 2;
     const span = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
     const offset = Math.max(span * 1.5, 200);
-    return [cx, cy + offset * 0.3, cz + offset] as [number, number, number];
+    return { center: [cx, cy, cz], offset };
   }, [components]);
+
+  const cameraPosition = useMemo<[number, number, number]>(() => {
+    const [cx, cy, cz] = bounds.center;
+    return [cx, cy + bounds.offset * 0.3, cz + bounds.offset];
+  }, [bounds]);
 
   if (!hasWebGL()) {
     return (
@@ -145,7 +159,7 @@ export const Pcf3DViewer: React.FC<Pcf3DViewerProps> = ({ sessionId, unitDisplay
       <div style={{ position: 'relative', height: 600 }}>
         <Suspense fallback={<div style={{ textAlign: 'center', padding: 60 }}><Spin /></div>}>
           <Canvas camera={{ position: cameraPosition, fov: 50 }}>
-            <SceneContent components={components} edges={edges} />
+            <SceneContent components={components} edges={edges} bounds={bounds} />
           </Canvas>
         </Suspense>
         <div style={{ position: 'absolute', bottom: 8, left: 8, fontSize: 12, color: '#999' }}>
