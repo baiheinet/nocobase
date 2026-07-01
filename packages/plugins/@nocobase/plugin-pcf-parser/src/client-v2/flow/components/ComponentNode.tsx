@@ -32,10 +32,20 @@ function computeOrientation(start: THREE.Vector3, end: THREE.Vector3) {
   return { dir, length, mid };
 }
 
+// PCF coordinates are in millimetres but a 34 m pipe with the original
+// 25-unit default radius renders at an aspect ratio of ~700:1, which is
+// effectively invisible. When the PCF doesn't provide a bore, fall back
+// to a length-proportional visual radius so the pipe is still readable
+// at scale, with a sane floor.
+function defaultVisualRadius(length: number): number {
+  if (!isFinite(length) || length <= 0) return 50;
+  return Math.max(50, length * 0.01);
+}
+
 function PipeMesh({ start, end, bore }: { start: THREE.Vector3; end: THREE.Vector3; bore?: number }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const { dir, length, mid } = computeOrientation(start, end);
-  const radius = (bore && bore > 0 ? bore : 50) / 2;
+  const radius = (bore && bore > 0 ? bore : defaultVisualRadius(length)) / 2;
 
   const quaternion = useMemo(() => {
     const q = new THREE.Quaternion();
