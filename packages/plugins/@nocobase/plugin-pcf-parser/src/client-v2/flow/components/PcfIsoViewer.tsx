@@ -108,13 +108,14 @@ function ComponentSymbol({
   comp,
   symbolSize,
   strokeW,
+  dim,
 }: {
   comp: PcfComponent;
   symbolSize: number;
   strokeW: number;
+  dim: number;
 }) {
   const type = (comp.componentType || '').toUpperCase();
-  const dim = strokeW * 6;
 
   const hasStartEnd = comp.startPoint && comp.endPoint;
   const hasCentre = !!comp.centrePoint;
@@ -457,7 +458,8 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
   const extentY = bounds.maxY - bounds.minY;
   const maxExtent = Math.max(extentX, extentY, 1000);
   const symbolSize = maxExtent * 0.03;
-  const strokeW = Math.max(0.5, maxExtent * 0.001);
+  const strokeW = 1.5;
+  const dim = Math.max(symbolSize * 0.5, 30);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     const delta = e.deltaY > 0 ? 0.85 : 1.15;
@@ -586,6 +588,7 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
                 comp={comp}
                 symbolSize={symbolSize}
                 strokeW={strokeW}
+                dim={dim}
               />
             ))}
           </g>
