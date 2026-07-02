@@ -1,6 +1,8 @@
 export const enUS = {
   'PCF 3D Viewer': 'PCF 3D Viewer',
   'PCF 3D Settings': 'PCF 3D Settings',
+  'PCF ISO Viewer': 'PCF ISO Viewer',
+  'PCF ISO Settings': 'PCF ISO Settings',
   'Select session': 'Select session',
   'Session': 'Session',
   'Unit display': 'Unit display',

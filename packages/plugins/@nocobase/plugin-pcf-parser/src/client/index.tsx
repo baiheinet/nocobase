@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { Plugin } from '@nocobase/client';
 import { PCFParserPage } from './routes/pcf-parser';
 import { Pcf3DBlockModel } from '../client-v2/flow/models/Pcf3DBlockModel';
+import { PcfIsoBlockModel } from '../client-v2/flow/models/PcfIsoBlockModel';
 
 export class PluginPCFParserClient extends Plugin {
   async load() {
@@ -17,7 +18,7 @@ export class PluginPCFParserClient extends Plugin {
       element: <Navigate to="/admin/settings/pcf-parser" replace />,
     });
 
-    this.app.flowEngine.registerModels({ Pcf3DBlockModel });
+    this.app.flowEngine.registerModels({ Pcf3DBlockModel, PcfIsoBlockModel });
   }
 }
 

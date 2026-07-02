@@ -23,6 +23,9 @@ export class PluginPCFParserClientV2 extends Plugin {
       Pcf3DBlockModel: {
         loader: () => import('./flow/models/Pcf3DBlockModel'),
       },
+      PcfIsoBlockModel: {
+        loader: () => import('./flow/models/PcfIsoBlockModel'),
+      },
     });
   }
 }

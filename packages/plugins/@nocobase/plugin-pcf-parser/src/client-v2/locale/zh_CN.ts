@@ -1,6 +1,8 @@
 export const zhCN = {
   'PCF 3D Viewer': 'PCF 3D 查看器',
   'PCF 3D Settings': 'PCF 3D 设置',
+  'PCF ISO Viewer': 'PCF ISO 查看器',
+  'PCF ISO Settings': 'PCF ISO 设置',
   'Select session': '选择会话',
   'Session': '会话',
   'Unit display': '单位显示',
