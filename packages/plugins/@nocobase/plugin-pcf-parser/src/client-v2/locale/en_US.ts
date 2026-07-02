@@ -12,6 +12,8 @@ export const enUS = {
   'WebGL is not supported in your browser': 'WebGL is not supported in your browser',
   'Select a parse session': 'Select a parse session',
   'No sessions found': 'No sessions found',
+  'Fit': 'Fit',
+  'No components found for this session.': 'No components found for this session.',
 };
 
 export default enUS;

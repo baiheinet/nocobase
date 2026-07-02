@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Spin, Alert } from 'antd';
+import { Spin, Alert, Button, Space } from 'antd';
 import { usePcfData } from '../hooks/usePcfData';
 import { usePcfEdges, PcfEdge } from '../hooks/usePcfEdges';
 import { tExpr } from '../../locale';
@@ -26,6 +26,8 @@ interface Bounds {
   maxX: number;
   minY: number;
   maxY: number;
+  width: number;
+  height: number;
 }
 
 interface PcfIsoViewerProps {
@@ -34,7 +36,9 @@ interface PcfIsoViewerProps {
   model?: unknown;
 }
 
-function toSVG(p: { x: number; y: number; z: number }): Point2D {
+function project(p: { x: number; y: number; z: number }): Point2D {
+  // PCF ISO diagrams are traditionally drawn in the X-Z plane.
+  // Flip Z so the diagram reads bottom-up.
   return { x: p.x, y: -p.z };
 }
 
@@ -46,46 +50,112 @@ function midpoint(a: Point2D, b: Point2D): Point2D {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
-function computeBounds(
-  components: PcfComponent[],
-  edges: PcfEdge[],
-): Bounds {
+function distance2D(a: Point2D, b: Point2D): number {
+  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+}
+
+interface NormalizedData {
+  components: Array<
+    PcfComponent & {
+      start2D: Point2D | null;
+      end2D: Point2D | null;
+      centre2D: Point2D | null;
+    }
+  >;
+  edges: Array<PcfEdge & { start2D: Point2D; end2D: Point2D }>;
+  bounds: Bounds;
+  maxExtent: number;
+}
+
+function normalizeData(components: PcfComponent[], edges: PcfEdge[]): NormalizedData {
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
 
+  const projected = components.map((comp) => {
+    const start2D = comp.startPoint ? project(comp.startPoint) : null;
+    const end2D = comp.endPoint ? project(comp.endPoint) : null;
+    const centre2D = comp.centrePoint ? project(comp.centrePoint) : null;
+    return { ...comp, start2D, end2D, centre2D };
+  });
+
   const addPoint = (p: Point2D) => {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.y > maxY) maxY = p.y;
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
+    minX = Math.min(minX, p.x);
+    maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y);
+    maxY = Math.max(maxY, p.y);
   };
 
-  for (const comp of components) {
-    if (comp.startPoint) addPoint(toSVG(comp.startPoint));
-    if (comp.endPoint) addPoint(toSVG(comp.endPoint));
-    if (comp.centrePoint) addPoint(toSVG(comp.centrePoint));
+  for (const comp of projected) {
+    if (comp.start2D) addPoint(comp.start2D);
+    if (comp.end2D) addPoint(comp.end2D);
+    if (comp.centre2D) addPoint(comp.centre2D);
   }
 
-  for (const edge of edges) {
-    addPoint(toSVG(edge.startPoint));
-    addPoint(toSVG(edge.endPoint));
+  const projectedEdges = edges.map((edge) => ({
+    ...edge,
+    start2D: project(edge.startPoint),
+    end2D: project(edge.endPoint),
+  }));
+
+  for (const edge of projectedEdges) {
+    addPoint(edge.start2D);
+    addPoint(edge.end2D);
   }
 
   if (!isFinite(minX)) {
-    return { minX: -500, maxX: 500, minY: -500, maxY: 500 };
+    return {
+      components: [],
+      edges: [],
+      bounds: { minX: 0, maxX: 1000, minY: 0, maxY: 1000, width: 1000, height: 1000 },
+      maxExtent: 1000,
+    };
   }
 
   const extentX = maxX - minX;
   const extentY = maxY - minY;
-  const paddingX = Math.max(extentX * 0.1, 200);
-  const paddingY = Math.max(extentY * 0.1, 200);
+  // Pad each axis independently; keep a small absolute padding so tiny models
+  // still have some breathing room.
+  const paddingX = Math.max(extentX * 0.05, 50);
+  const paddingY = Math.max(extentY * 0.05, 50);
+
+  // ISO drawings of long pipelines can be extremely wide-and-thin. That is
+  // mathematically correct, but in a default NocoBase card the content can
+  // collapse to a few pixels tall. Cap the aspect ratio at 8:1 by adding
+  // vertical padding. This only adds whitespace; it does not distort data.
+  const targetHeight = Math.max(extentY + paddingY * 2, (extentX + paddingX * 2) / 8);
+  const extraY = Math.max(0, targetHeight - (extentY + paddingY * 2)) / 2;
+
+  const offsetX = minX - paddingX;
+  const offsetY = minY - paddingY - extraY;
+
+  const bounds: Bounds = {
+    minX: 0,
+    maxX: extentX + paddingX * 2,
+    minY: 0,
+    maxY: targetHeight,
+    width: extentX + paddingX * 2,
+    height: targetHeight,
+  };
+
+  const normalizePoint = (p: Point2D): Point2D => ({ x: p.x - offsetX, y: p.y - offsetY });
+
   return {
-    minX: minX - paddingX,
-    maxX: maxX + paddingX,
-    minY: minY - paddingY,
-    maxY: maxY + paddingY,
+    components: projected.map((comp) => ({
+      ...comp,
+      start2D: comp.start2D ? normalizePoint(comp.start2D) : null,
+      end2D: comp.end2D ? normalizePoint(comp.end2D) : null,
+      centre2D: comp.centre2D ? normalizePoint(comp.centre2D) : null,
+    })),
+    edges: projectedEdges.map((edge) => ({
+      ...edge,
+      start2D: normalizePoint(edge.start2D),
+      end2D: normalizePoint(edge.end2D),
+    })),
+    bounds,
+    maxExtent: Math.max(bounds.width, bounds.height, 1000),
   };
 }
 
@@ -95,8 +165,11 @@ function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number): 
 }
 
 function describeArc(
-  cx: number, cy: number, r: number,
-  startAngleDeg: number, endAngleDeg: number,
+  cx: number,
+  cy: number,
+  r: number,
+  startAngleDeg: number,
+  endAngleDeg: number,
 ): string {
   const start = polarToCartesian(cx, cy, r, endAngleDeg);
   const end = polarToCartesian(cx, cy, r, startAngleDeg);
@@ -110,31 +183,31 @@ function ComponentSymbol({
   strokeW,
   dim,
 }: {
-  comp: PcfComponent;
+  comp: NormalizedData['components'][number];
   symbolSize: number;
   strokeW: number;
   dim: number;
 }) {
   const type = (comp.componentType || '').toUpperCase();
 
-  const hasStartEnd = comp.startPoint && comp.endPoint;
-  const hasCentre = !!comp.centrePoint;
+  const hasStartEnd = comp.start2D && comp.end2D;
+  const hasCentre = !!comp.centre2D;
   const pos: Point2D | null = hasStartEnd
-    ? midpoint(toSVG(comp.startPoint!), toSVG(comp.endPoint!))
+    ? midpoint(comp.start2D!, comp.end2D!)
     : hasCentre
-      ? toSVG(comp.centrePoint!)
-      : comp.startPoint
-        ? toSVG(comp.startPoint)
-        : comp.endPoint
-          ? toSVG(comp.endPoint)
+      ? comp.centre2D!
+      : comp.start2D
+        ? comp.start2D
+        : comp.end2D
+          ? comp.end2D
           : null;
 
-  const angle = hasStartEnd
-    ? getAngle(toSVG(comp.startPoint!), toSVG(comp.endPoint!))
-    : 0;
+  if (!pos) return null;
 
-  const px = pos?.x ?? 0;
-  const py = pos?.y ?? 0;
+  const angle = hasStartEnd ? getAngle(comp.start2D!, comp.end2D!) : 0;
+
+  const px = pos.x;
+  const py = pos.y;
   const h = symbolSize * 0.5;
   const perpAngle = angle + Math.PI / 2;
   const dx = h * Math.cos(perpAngle);
@@ -142,20 +215,22 @@ function ComponentSymbol({
 
   switch (type) {
     case 'PIPE': {
-      if (comp.startPoint && comp.endPoint) {
-        const s = toSVG(comp.startPoint);
-        const e = toSVG(comp.endPoint);
+      if (comp.start2D && comp.end2D) {
+        const s = comp.start2D;
+        const e = comp.end2D;
         const col =
-          comp.pipelineReference?.includes('BRANCH') ||
-          comp.pipelineReference?.includes('branch')
+          comp.pipelineReference?.includes('BRANCH') || comp.pipelineReference?.includes('branch')
             ? '#2196F3'
             : '#1565C0';
         return (
           <line
-            x1={s.x} y1={s.y}
-            x2={e.x} y2={e.y}
+            x1={s.x}
+            y1={s.y}
+            x2={e.x}
+            y2={e.y}
             stroke={col}
             strokeWidth={strokeW * 2}
+            strokeLinecap="round"
           />
         );
       }
@@ -163,13 +238,20 @@ function ComponentSymbol({
     }
     case 'ELBOW':
     case 'BEND': {
-      if (!comp.startPoint || !comp.endPoint) {
+      if (!comp.start2D || !comp.end2D) {
         return (
-          <circle cx={px} cy={py} r={h * 0.6} fill="none" stroke="#E65100" strokeWidth={strokeW} />
+          <circle
+            cx={px}
+            cy={py}
+            r={h * 0.6}
+            fill="none"
+            stroke="#E65100"
+            strokeWidth={strokeW}
+          />
         );
       }
-      const startA = getAngle(toSVG(comp.startPoint), pos!);
-      const endA = getAngle(pos!, toSVG(comp.endPoint));
+      const startA = getAngle(comp.start2D, pos);
+      const endA = getAngle(pos, comp.end2D);
       const r = h * 0.8;
       const x1 = px + r * Math.cos(startA);
       const y1 = py + r * Math.sin(startA);
@@ -182,6 +264,7 @@ function ComponentSymbol({
           fill="none"
           stroke="#E65100"
           strokeWidth={strokeW * 1.5}
+          strokeLinecap="round"
         />
       );
     }
@@ -189,19 +272,26 @@ function ComponentSymbol({
       return (
         <>
           <line
-            x1={px - dx} y1={py - dy}
-            x2={px + dx} y2={py + dy}
+            x1={px - dx}
+            y1={py - dy}
+            x2={px + dx}
+            y2={py + dy}
             stroke="#333"
             strokeWidth={strokeW * 3}
+            strokeLinecap="butt"
           />
           <rect
-            x={px - dx - dim * 0.3} y={py - dy - dim * 0.3}
-            width={dim * 0.6} height={dim * 0.6}
+            x={px - dx - dim * 0.3}
+            y={py - dy - dim * 0.3}
+            width={dim * 0.6}
+            height={dim * 0.6}
             fill="#555"
           />
           <rect
-            x={px + dx - dim * 0.3} y={py + dy - dim * 0.3}
-            width={dim * 0.6} height={dim * 0.6}
+            x={px + dx - dim * 0.3}
+            y={py + dy - dim * 0.3}
+            width={dim * 0.6}
+            height={dim * 0.6}
             fill="#555"
           />
         </>
@@ -215,14 +305,18 @@ function ComponentSymbol({
       return (
         <>
           <line
-            x1={px - gdx} y1={py - gdy}
-            x2={px + gdx} y2={py + gdy}
+            x1={px - gdx}
+            y1={py - gdy}
+            x2={px + gdx}
+            y2={py + gdy}
             stroke="#666"
             strokeWidth={strokeW}
           />
           <line
-            x1={px - gdx2} y1={py - gdy2}
-            x2={px + gdx2} y2={py + gdy2}
+            x1={px - gdx2}
+            y1={py - gdy2}
+            x2={px + gdx2}
+            y2={py + gdy2}
             stroke="#666"
             strokeWidth={strokeW}
           />
@@ -231,39 +325,43 @@ function ComponentSymbol({
     }
     case 'TEE':
     case 'BRANCH': {
-      if (comp.centrePoint) {
-        const cp = toSVG(comp.centrePoint);
+      if (comp.centre2D) {
+        const cp = comp.centre2D;
         let mainStart = cp;
         let mainEnd = cp;
-        if (comp.startPoint) mainStart = toSVG(comp.startPoint);
-        if (comp.endPoint) mainEnd = toSVG(comp.endPoint);
+        if (comp.start2D) mainStart = comp.start2D;
+        if (comp.end2D) mainEnd = comp.end2D;
         const branchLen = symbolSize * 0.7;
-        const branchAngle = comp.startPoint
-          ? getAngle(mainStart, mainEnd) + Math.PI / 2
-          : 0;
+        const branchAngle = comp.start2D ? getAngle(mainStart, mainEnd) + Math.PI / 2 : 0;
         const bx = cp.x + branchLen * Math.cos(branchAngle);
         const by = cp.y + branchLen * Math.sin(branchAngle);
         return (
           <>
             <line
-              x1={mainStart.x} y1={mainStart.y}
-              x2={mainEnd.x} y2={mainEnd.y}
+              x1={mainStart.x}
+              y1={mainStart.y}
+              x2={mainEnd.x}
+              y2={mainEnd.y}
               stroke="#2E7D32"
               strokeWidth={strokeW * 1.5}
+              strokeLinecap="round"
             />
             <line
-              x1={cp.x} y1={cp.y}
-              x2={bx} y2={by}
+              x1={cp.x}
+              y1={cp.y}
+              x2={bx}
+              y2={by}
               stroke="#2E7D32"
               strokeWidth={strokeW * 1.5}
+              strokeLinecap="round"
             />
             <circle cx={cp.x} cy={cp.y} r={dim * 0.4} fill="#2E7D32" />
           </>
         );
       }
       if (hasStartEnd) {
-        const s = toSVG(comp.startPoint!);
-        const e = toSVG(comp.endPoint!);
+        const s = comp.start2D!;
+        const e = comp.end2D!;
         const mp = midpoint(s, e);
         const ba = getAngle(s, mp) + Math.PI / 2;
         const bh = symbolSize * 0.6;
@@ -271,8 +369,24 @@ function ComponentSymbol({
         const by = mp.y + bh * Math.sin(ba);
         return (
           <>
-            <line x1={s.x} y1={s.y} x2={e.x} y2={e.y} stroke="#2E7D32" strokeWidth={strokeW * 1.5} />
-            <line x1={mp.x} y1={mp.y} x2={bx} y2={by} stroke="#2E7D32" strokeWidth={strokeW * 1.5} />
+            <line
+              x1={s.x}
+              y1={s.y}
+              x2={e.x}
+              y2={e.y}
+              stroke="#2E7D32"
+              strokeWidth={strokeW * 1.5}
+              strokeLinecap="round"
+            />
+            <line
+              x1={mp.x}
+              y1={mp.y}
+              x2={bx}
+              y2={by}
+              stroke="#2E7D32"
+              strokeWidth={strokeW * 1.5}
+              strokeLinecap="round"
+            />
           </>
         );
       }
@@ -282,8 +396,7 @@ function ComponentSymbol({
     }
     case 'VALVE': {
       const material = (comp.materialIdentifier || '').toUpperCase();
-      const isButterfly =
-        material.includes('BUTTERFLY') || material.includes('BF');
+      const isButterfly = material.includes('BUTTERFLY') || material.includes('BF');
       if (isButterfly) {
         const dyV = symbolSize * 0.35;
         const dxV = symbolSize * 0.35;
@@ -324,20 +437,36 @@ function ComponentSymbol({
       );
     }
     case 'WELD': {
-      if (comp.startPoint) {
-        const sp = toSVG(comp.startPoint);
+      if (comp.start2D) {
+        const sp = comp.start2D;
         return <circle cx={sp.x} cy={sp.y} r={dim * 0.3} fill="#9E9E9E" />;
       }
       return <circle cx={px} cy={py} r={dim * 0.3} fill="#9E9E9E" />;
     }
     case 'BOLT': {
-      return <circle cx={px} cy={py} r={dim * 0.4} fill="none" stroke="#757575" strokeWidth={strokeW} />;
+      return (
+        <circle
+          cx={px}
+          cy={py}
+          r={dim * 0.4}
+          fill="none"
+          stroke="#757575"
+          strokeWidth={strokeW}
+        />
+      );
     }
     case 'OLET': {
       const cr = dim * 0.5;
       return (
         <>
-          <circle cx={px} cy={py} r={cr} fill="none" stroke="#5D4037" strokeWidth={strokeW} />
+          <circle
+            cx={px}
+            cy={py}
+            r={cr}
+            fill="none"
+            stroke="#5D4037"
+            strokeWidth={strokeW}
+          />
           <line x1={px - cr} y1={py} x2={px + cr} y2={py} stroke="#5D4037" strokeWidth={strokeW} />
           <line x1={px} y1={py - cr} x2={px} y2={py + cr} stroke="#5D4037" strokeWidth={strokeW} />
         </>
@@ -348,8 +477,10 @@ function ComponentSymbol({
       const nh = dim * 0.8;
       return (
         <rect
-          x={px - nw / 2} y={py - nh / 2}
-          width={nw} height={nh}
+          x={px - nw / 2}
+          y={py - nh / 2}
+          width={nw}
+          height={nh}
           fill="none"
           stroke="#5D4037"
           strokeWidth={strokeW}
@@ -358,8 +489,8 @@ function ComponentSymbol({
     }
     case 'REDUCER': {
       if (hasStartEnd) {
-        const s = toSVG(comp.startPoint!);
-        const e = toSVG(comp.endPoint!);
+        const s = comp.start2D!;
+        const e = comp.end2D!;
         const mp = midpoint(s, e);
         const dirAngle = getAngle(s, mp);
         const rDir = symbolSize * 0.4;
@@ -426,11 +557,16 @@ function EdgeLine({
   edge,
   strokeW,
 }: {
-  edge: PcfEdge;
+  edge: NormalizedData['edges'][number];
   strokeW: number;
 }) {
-  const start = toSVG(edge.startPoint);
-  const end = toSVG(edge.endPoint);
+  const start = edge.start2D;
+  const end = edge.end2D;
+  const len = distance2D(start, end);
+  // Degenerate edges (two components sharing the exact same endpoint) create
+  // zero-length lines that can clutter the view. Skip them; the component
+  // symbols already mark the connection point.
+  if (len < 0.001) return null;
   return (
     <line
       x1={start.x}
@@ -451,18 +587,25 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
 
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
   const [panning, setPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [dragStart, setDragStart] = useState({ clientX: 0, clientY: 0, tx: 0, ty: 0 });
 
-  const bounds = useMemo(() => computeBounds(components, edges), [components, edges]);
-  const extentX = bounds.maxX - bounds.minX;
-  const extentY = bounds.maxY - bounds.minY;
-  const maxExtent = Math.max(extentX, extentY, 1000);
-  const symbolSize = maxExtent * 0.03;
-  const strokeW = 3;
-  const dim = Math.max(symbolSize, 60);
+  const getBaseScale = useCallback(() => {
+    const svg = svgRef.current;
+    if (!svg) return 1;
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return 1;
+    return Math.max(bounds.width / rect.width, bounds.height / rect.height);
+  }, [bounds.width, bounds.height]);
+
+  const data = useMemo(() => normalizeData(components, edges), [components, edges]);
+  const { bounds, maxExtent } = data;
+
+  const symbolSize = Math.max(maxExtent * 0.02, 30);
+  const strokeW = 2;
+  const dim = Math.max(symbolSize * 0.8, 24);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
-    const delta = e.deltaY > 0 ? 0.85 : 1.15;
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
     setTransform((t) => ({
       ...t,
       scale: Math.max(0.1, Math.min(20, t.scale * delta)),
@@ -472,21 +615,23 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 0) {
       setPanning(true);
-      setPanStart({ x: e.clientX - transform.x, y: e.clientY - transform.y });
+      setDragStart({ clientX: e.clientX, clientY: e.clientY, tx: transform.x, ty: transform.y });
     }
   }, [transform.x, transform.y]);
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       if (panning) {
+        const baseScale = getBaseScale();
+        const scale = baseScale / transform.scale;
         setTransform((t) => ({
           ...t,
-          x: e.clientX - panStart.x,
-          y: e.clientY - panStart.y,
+          x: dragStart.tx + (e.clientX - dragStart.clientX) * scale,
+          y: dragStart.ty + (e.clientY - dragStart.clientY) * scale,
         }));
       }
     },
-    [panning, panStart],
+    [panning, dragStart, getBaseScale, transform.scale],
   );
 
   const handleMouseUp = useCallback(() => setPanning(false), []);
@@ -500,9 +645,20 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
     return () => svg.removeEventListener('wheel', preventDefaultWheel);
   }, []);
 
+  const handleReset = useCallback(() => {
+    setTransform({ x: 0, y: 0, scale: 1 });
+  }, []);
+
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 400 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: 400,
+        }}
+      >
         <Spin />
       </div>
     );
@@ -515,23 +671,29 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
   if (!sessionId) {
     return (
       <Alert
-        message={tExpr('No session selected. Please configure the block settings to select a parse session.')}
+        message={tExpr(
+          'No session selected. Please configure the block settings to select a parse session.',
+        )}
         type="info"
         showIcon
       />
     );
   }
 
-  const vb = `${bounds.minX} ${bounds.minY} ${extentX} ${extentY}`;
+  const vb = `${bounds.minX} ${bounds.minY} ${bounds.width} ${bounds.height}`;
+  const showEmpty = data.components.length === 0;
 
   return (
     <div
       style={{
         width: '100%',
-        height: '100%',
         minHeight: 500,
         display: 'flex',
         flexDirection: 'column',
+        background: '#fafafa',
+        border: '1px solid #e8e8e8',
+        borderRadius: 4,
+        overflow: 'hidden',
       }}
     >
       {session && (
@@ -544,13 +706,21 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
             display: 'flex',
             gap: 16,
             flexWrap: 'wrap',
+            alignItems: 'center',
             flexShrink: 0,
           }}
         >
-          <span><strong>{session.fileName || session.sessionId}</strong></span>
+          <span>
+            <strong>{session.fileName || session.sessionId}</strong>
+          </span>
           {session.unitsCoOrds && <span>Units: {session.unitsCoOrds}</span>}
           <span>Components: {components.length}</span>
           <span>Edges: {edges.length}</span>
+          <Space style={{ marginLeft: 'auto' }}>
+            <Button size="small" onClick={handleReset}>
+              {tExpr('Fit')}
+            </Button>
+          </Space>
         </div>
       )}
       <div
@@ -563,33 +733,42 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
           background: '#fff',
         }}
       >
-        <svg
-          ref={svgRef}
-          viewBox={vb}
-          preserveAspectRatio="xMidYMid meet"
-          style={{ width: '100%', height: '100%', display: 'block' }}
-          onWheel={handleWheel}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseLeave}
-        >
-          <style>{`line, circle, rect, path, polygon { vector-effect: non-scaling-stroke; }`}</style>
-          <g transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}>
-            {edges.map((edge) => (
-              <EdgeLine key={edge.id} edge={edge} strokeW={strokeW} />
-            ))}
-            {components.map((comp) => (
-              <ComponentSymbol
-                key={comp.id}
-                comp={comp}
-                symbolSize={symbolSize}
-                strokeW={strokeW}
-                dim={dim}
-              />
-            ))}
-          </g>
-        </svg>
+        {showEmpty ? (
+          <Alert
+            message={tExpr('No components found for this session.')}
+            type="info"
+            showIcon
+            style={{ margin: 16 }}
+          />
+        ) : (
+          <svg
+            ref={svgRef}
+            viewBox={vb}
+            preserveAspectRatio="xMidYMid meet"
+            style={{ width: '100%', height: '100%', display: 'block' }}
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseLeave}
+          >
+            <style>{`line, circle, rect, path, polygon { vector-effect: non-scaling-stroke; }`}</style>
+            <g transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}>
+              {data.edges.map((edge) => (
+                <EdgeLine key={edge.id} edge={edge} strokeW={strokeW} />
+              ))}
+              {data.components.map((comp) => (
+                <ComponentSymbol
+                  key={comp.id}
+                  comp={comp}
+                  symbolSize={symbolSize}
+                  strokeW={strokeW}
+                  dim={dim}
+                />
+              ))}
+            </g>
+          </svg>
+        )}
       </div>
     </div>
   );

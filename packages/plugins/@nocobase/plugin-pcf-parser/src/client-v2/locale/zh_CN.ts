@@ -12,6 +12,8 @@ export const zhCN = {
   'WebGL is not supported in your browser': '当前浏览器不支持 WebGL',
   'Select a parse session': '选择解析会话',
   'No sessions found': '未找到会话',
+  'Fit': '适配',
+  'No components found for this session.': '该会话没有解析到组件。',
 };
 
 export default zhCN;
