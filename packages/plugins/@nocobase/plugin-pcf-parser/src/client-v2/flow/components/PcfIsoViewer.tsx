@@ -77,12 +77,15 @@ function computeBounds(
     return { minX: -500, maxX: 500, minY: -500, maxY: 500 };
   }
 
-  const padding = Math.max(maxX - minX, maxY - minY, 1000) * 0.1;
+  const extentX = maxX - minX;
+  const extentY = maxY - minY;
+  const paddingX = Math.max(extentX * 0.1, 200);
+  const paddingY = Math.max(extentY * 0.1, 200);
   return {
-    minX: minX - padding,
-    maxX: maxX + padding,
-    minY: minY - padding,
-    maxY: maxY + padding,
+    minX: minX - paddingX,
+    maxX: maxX + paddingX,
+    minY: minY - paddingY,
+    maxY: maxY + paddingY,
   };
 }
 
@@ -570,6 +573,7 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseLeave}
         >
+          <style>{`line, circle, rect, path, polygon { vector-effect: non-scaling-stroke; }`}</style>
           <g
             transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}
             style={{ transformOrigin: '0 0' }}
