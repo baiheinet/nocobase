@@ -521,7 +521,15 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
   const vb = `${bounds.minX} ${bounds.minY} ${extentX} ${extentY}`;
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        minHeight: 500,
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
       {session && (
         <div
           style={{
@@ -532,6 +540,7 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
             display: 'flex',
             gap: 16,
             flexWrap: 'wrap',
+            flexShrink: 0,
           }}
         >
           <span><strong>{session.fileName || session.sessionId}</strong></span>
@@ -543,6 +552,7 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
       <div
         style={{
           flex: 1,
+          minHeight: 400,
           overflow: 'hidden',
           cursor: panning ? 'grabbing' : 'grab',
           position: 'relative',
@@ -552,7 +562,8 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
         <svg
           ref={svgRef}
           viewBox={vb}
-          style={{ width: '100%', height: '100%' }}
+          preserveAspectRatio="xMidYMid meet"
+          style={{ width: '100%', height: '100%', display: 'block' }}
           onWheel={handleWheel}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
