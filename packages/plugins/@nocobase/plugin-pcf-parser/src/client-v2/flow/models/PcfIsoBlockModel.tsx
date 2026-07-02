@@ -8,7 +8,20 @@ export class PcfIsoBlockModel extends DataBlockModel {
   renderComponent() {
     const sessionId = this.props?.sessionId || '';
     const unitDisplay = this.props?.unitDisplay || 'original';
-    return <PcfIsoViewer sessionId={sessionId} unitDisplay={unitDisplay} model={this} />;
+    const projection = this.props?.projection || 'dimetric';
+    const showLabels = this.props?.showLabels !== false;
+    const { heightMode, height } = (this as any).decoratorProps || {};
+    return (
+      <PcfIsoViewer
+        sessionId={sessionId}
+        unitDisplay={unitDisplay}
+        projection={projection}
+        showLabels={showLabels}
+        heightMode={heightMode}
+        height={height}
+        model={this}
+      />
+    );
   }
 }
 
@@ -40,11 +53,32 @@ PcfIsoBlockModel.registerFlow({
           ],
           default: 'original',
         },
+        projection: {
+          type: 'string',
+          'x-component': 'Select',
+          'x-decorator': 'FormItem',
+          title: tExpr('Projection'),
+          enum: [
+            { label: tExpr('Plan (X-Z top-down)'), value: 'plan' },
+            { label: tExpr('Dimetric (2:1)'), value: 'dimetric' },
+            { label: tExpr('True isometric (30°)'), value: 'isometric' },
+          ],
+          default: 'dimetric',
+        },
+        showLabels: {
+          type: 'boolean',
+          'x-component': 'Switch',
+          'x-decorator': 'FormItem',
+          title: tExpr('Show component labels'),
+          default: true,
+        },
       },
       handler(ctx, params) {
         ctx.model.setProps({
           sessionId: params.sessionId || '',
           unitDisplay: params.unitDisplay || 'original',
+          projection: params.projection || 'dimetric',
+          showLabels: params.showLabels !== false,
         });
       },
     },

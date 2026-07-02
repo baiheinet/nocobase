@@ -34,11 +34,33 @@ interface PcfIsoViewerProps {
   sessionId: string;
   unitDisplay: string;
   model?: unknown;
+  projection?: 'plan' | 'dimetric' | 'isometric';
+  showLabels?: boolean;
+  heightMode?: string;
+  height?: number;
 }
 
-function project(p: { x: number; y: number; z: number }): Point2D {
-  // PCF ISO diagrams are traditionally drawn in the X-Z plane.
-  // Flip Z so the diagram reads bottom-up.
+const SQRT3 = Math.sqrt(3);
+const COS30 = SQRT3 / 2; // 0.8660
+const SIN30 = 0.5;
+
+function project(
+  p: { x: number; y: number; z: number },
+  mode: 'plan' | 'dimetric' | 'isometric' = 'plan',
+): Point2D {
+  // PCF convention: X = horizontal east, Y = elevation (positive up), Z = horizontal north.
+  // SVG Y axis points down, so we negate when SVG-Y is meant to be "up on screen".
+  if (mode === 'dimetric') {
+    // 2:1 dimetric (engineering). Y axis goes up-right at ~26.57° (atan(0.5)),
+    // Z axis goes straight up on screen. The pipe main run is still mostly horizontal
+    // (Z stays "down" on screen, but X is the screen-horizontal axis).
+    return { x: p.x - p.y * 0.5, y: p.z + p.y * COS30 };
+  }
+  if (mode === 'isometric') {
+    // True isometric: X and Y both tilt at 30° off horizontal, Z straight up.
+    return { x: (p.x - p.y) * COS30, y: (p.x + p.y) * SIN30 - p.z };
+  }
+  // plan (default, current behavior)
   return { x: p.x, y: -p.z };
 }
 
@@ -67,16 +89,20 @@ interface NormalizedData {
   maxExtent: number;
 }
 
-function normalizeData(components: PcfComponent[], edges: PcfEdge[]): NormalizedData {
+function normalizeData(
+  components: PcfComponent[],
+  edges: PcfEdge[],
+  projection: 'plan' | 'dimetric' | 'isometric' = 'plan',
+): NormalizedData {
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
 
   const projected = components.map((comp) => {
-    const start2D = comp.startPoint ? project(comp.startPoint) : null;
-    const end2D = comp.endPoint ? project(comp.endPoint) : null;
-    const centre2D = comp.centrePoint ? project(comp.centrePoint) : null;
+    const start2D = comp.startPoint ? project(comp.startPoint, projection) : null;
+    const end2D = comp.endPoint ? project(comp.endPoint, projection) : null;
+    const centre2D = comp.centrePoint ? project(comp.centrePoint, projection) : null;
     return { ...comp, start2D, end2D, centre2D };
   });
 
@@ -96,8 +122,8 @@ function normalizeData(components: PcfComponent[], edges: PcfEdge[]): Normalized
 
   const projectedEdges = edges.map((edge) => ({
     ...edge,
-    start2D: project(edge.startPoint),
-    end2D: project(edge.endPoint),
+    start2D: project(edge.startPoint, projection),
+    end2D: project(edge.endPoint, projection),
   }));
 
   for (const edge of projectedEdges) {
@@ -175,6 +201,53 @@ function describeArc(
   const end = polarToCartesian(cx, cy, r, startAngleDeg);
   const largeArc = endAngleDeg - startAngleDeg > 180 ? 1 : 0;
   return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 0 ${end.x} ${end.y}`;
+}
+
+function pickLabelPos(
+  comp: PcfComponent & {
+    start2D: Point2D | null;
+    end2D: Point2D | null;
+    centre2D: Point2D | null;
+  },
+): Point2D | null {
+  if (comp.centre2D) return comp.centre2D;
+  if (comp.start2D && comp.end2D) return midpoint(comp.start2D, comp.end2D);
+  return comp.start2D || comp.end2D;
+}
+
+function ComponentLabel({
+  comp,
+  fontSize,
+  offsetY,
+}: {
+  comp: PcfComponent & {
+    start2D: Point2D | null;
+    end2D: Point2D | null;
+    centre2D: Point2D | null;
+  };
+  fontSize: number;
+  offsetY: number;
+}) {
+  const pos = pickLabelPos(comp);
+  if (!pos) return null;
+  const text = comp.componentIdentifier || comp.componentType || '';
+  if (!text) return null;
+  return (
+    <text
+      x={pos.x}
+      y={pos.y - offsetY}
+      fontSize={fontSize}
+      fill="#333"
+      stroke="#fff"
+      strokeWidth={fontSize * 0.18}
+      paintOrder="stroke fill"
+      textAnchor="middle"
+      dominantBaseline="alphabetic"
+      style={{ pointerEvents: 'none', userSelect: 'none' }}
+    >
+      {text}
+    </text>
+  );
 }
 
 function ComponentSymbol({
@@ -580,7 +653,14 @@ function EdgeLine({
   );
 }
 
-export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
+export function PcfIsoViewer({
+  sessionId,
+  unitDisplay,
+  projection = 'dimetric',
+  showLabels = true,
+  heightMode,
+  height,
+}: PcfIsoViewerProps) {
   const { session, components, loading, error } = usePcfData(sessionId);
   const edges = usePcfEdges(components);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -588,13 +668,42 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
   const [panning, setPanning] = useState(false);
   const [dragStart, setDragStart] = useState({ clientX: 0, clientY: 0, tx: 0, ty: 0 });
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
-  const data = useMemo(() => normalizeData(components, edges), [components, edges]);
+  const data = useMemo(
+    () => normalizeData(components, edges, projection),
+    [components, edges, projection],
+  );
   const { bounds, maxExtent } = data;
 
   const symbolSize = Math.max(maxExtent * 0.02, 30);
   const strokeW = 2;
   const dim = Math.max(symbolSize * 0.8, 24);
+  const labelFontSize = Math.max(maxExtent * 0.012, 16);
+  const labelOffsetY = symbolSize * 0.7;
+
+  // Counter-scale the label group so font size stays constant on screen
+  // when the user zooms in/out. The SVG scales the viewBox to the container
+  // by (container.width / bounds.width), and the inner content group further
+  // scales by transform.scale. To make the label render at `fontSize` pixels
+  // we need to invert that.
+  const labelCounterScale = useMemo(() => {
+    if (!containerSize.width || !bounds.width) return 1;
+    return bounds.width / (containerSize.width * transform.scale);
+  }, [containerSize.width, bounds.width, transform.scale]);
+
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      setContainerSize({ width: rect.width, height: rect.height });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const getBaseScale = useCallback(() => {
     const svg = svgRef.current;
@@ -649,14 +758,37 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
     setTransform({ x: 0, y: 0, scale: 1 });
   }, []);
 
+  // Container height follows NocoBase block height setting:
+  //   specifyValue → exact pixel height from user
+  //   fullHeight   → fill whatever BlockItemCard's fullHeight calc gave us (height: '100%')
+  //   defaultHeight (or unset) → fall back to a 500px minimum so the diagram is always visible
+  const getContainerStyle = useCallback((): React.CSSProperties => {
+    const base: React.CSSProperties = {
+      width: '100%',
+      minHeight: 500,
+      display: 'flex',
+      flexDirection: 'column',
+      background: '#fafafa',
+      border: '1px solid #e8e8e8',
+      borderRadius: 4,
+      overflow: 'hidden',
+    };
+    if (heightMode === 'specifyValue' && typeof height === 'number' && height > 0) {
+      return { ...base, height };
+    }
+    if (heightMode === 'fullHeight') {
+      return { ...base, height: '100%' };
+    }
+    return base;
+  }, [heightMode, height]);
+
   if (loading) {
     return (
       <div
         style={{
-          display: 'flex',
+          ...getContainerStyle(),
           justifyContent: 'center',
           alignItems: 'center',
-          height: 400,
         }}
       >
         <Spin />
@@ -665,18 +797,25 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
   }
 
   if (error) {
-    return <Alert message={error} type="error" showIcon />;
+    return (
+      <div style={getContainerStyle()}>
+        <Alert message={error} type="error" showIcon style={{ margin: 16 }} />
+      </div>
+    );
   }
 
   if (!sessionId) {
     return (
-      <Alert
-        message={tExpr(
-          'No session selected. Please configure the block settings to select a parse session.',
-        )}
-        type="info"
-        showIcon
-      />
+      <div style={getContainerStyle()}>
+        <Alert
+          message={tExpr(
+            'No session selected. Please configure the block settings to select a parse session.',
+          )}
+          type="info"
+          showIcon
+          style={{ margin: 16 }}
+        />
+      </div>
     );
   }
 
@@ -684,18 +823,7 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
   const showEmpty = data.components.length === 0;
 
   return (
-    <div
-      style={{
-        width: '100%',
-        minHeight: 500,
-        display: 'flex',
-        flexDirection: 'column',
-        background: '#fafafa',
-        border: '1px solid #e8e8e8',
-        borderRadius: 4,
-        overflow: 'hidden',
-      }}
-    >
+    <div style={getContainerStyle()}>
       {session && (
         <div
           style={{
@@ -726,7 +854,6 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
       <div
         style={{
           flex: 1,
-          minHeight: 400,
           overflow: 'hidden',
           cursor: panning ? 'grabbing' : 'grab',
           position: 'relative',
@@ -752,7 +879,7 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseLeave}
           >
-            <style>{`line, circle, rect, path, polygon { vector-effect: non-scaling-stroke; }`}</style>
+            <style>{`line, circle, rect, path, polygon, text { vector-effect: non-scaling-stroke; }`}</style>
             <g transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}>
               {data.edges.map((edge) => (
                 <EdgeLine key={edge.id} edge={edge} strokeW={strokeW} />
@@ -767,6 +894,20 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
                 />
               ))}
             </g>
+            {showLabels && (
+              <g transform={`translate(${transform.x}, ${transform.y}) scale(${
+                transform.scale * labelCounterScale
+              })`}>
+                {data.components.map((comp) => (
+                  <ComponentLabel
+                    key={`lbl-${comp.id}`}
+                    comp={comp}
+                    fontSize={labelFontSize}
+                    offsetY={labelOffsetY}
+                  />
+                ))}
+              </g>
+            )}
           </svg>
         )}
       </div>

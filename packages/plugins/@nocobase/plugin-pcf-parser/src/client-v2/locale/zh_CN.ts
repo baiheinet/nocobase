@@ -14,6 +14,11 @@ export const zhCN = {
   'No sessions found': '未找到会话',
   'Fit': '适配',
   'No components found for this session.': '该会话没有解析到组件。',
+  'Projection': '投影方式',
+  'Plan (X-Z top-down)': '平面投影 (X-Z 顶视)',
+  'Dimetric (2:1)': '二轴测投影 (2:1)',
+  'True isometric (30°)': '正等轴测投影 (30°)',
+  'Show component labels': '显示 component 标注',
 };
 
 export default zhCN;
