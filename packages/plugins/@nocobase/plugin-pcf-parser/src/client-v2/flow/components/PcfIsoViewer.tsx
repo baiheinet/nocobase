@@ -458,8 +458,8 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
   const extentY = bounds.maxY - bounds.minY;
   const maxExtent = Math.max(extentX, extentY, 1000);
   const symbolSize = maxExtent * 0.03;
-  const strokeW = 1.5;
-  const dim = Math.max(symbolSize * 0.5, 30);
+  const strokeW = 3;
+  const dim = Math.max(symbolSize, 60);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     const delta = e.deltaY > 0 ? 0.85 : 1.15;
@@ -575,10 +575,7 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
           onMouseLeave={handleMouseLeave}
         >
           <style>{`line, circle, rect, path, polygon { vector-effect: non-scaling-stroke; }`}</style>
-          <g
-            transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}
-            style={{ transformOrigin: '0 0' }}
-          >
+          <g transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}>
             {edges.map((edge) => (
               <EdgeLine key={edge.id} edge={edge} strokeW={strokeW} />
             ))}
