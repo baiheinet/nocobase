@@ -460,7 +460,6 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
   const strokeW = Math.max(0.5, maxExtent * 0.001);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
     const delta = e.deltaY > 0 ? 0.85 : 1.15;
     setTransform((t) => ({
       ...t,
