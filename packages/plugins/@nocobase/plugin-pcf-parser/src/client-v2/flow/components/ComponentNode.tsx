@@ -63,7 +63,7 @@ function PipeMesh({ start, end, bore }: { start: THREE.Vector3; end: THREE.Vecto
   return (
     <mesh ref={meshRef} position={mid} quaternion={quaternion}>
       <cylinderGeometry args={[radius, radius, length, 16]} />
-      <meshStandardMaterial color="#8899aa" metalness={0.6} roughness={0.4} />
+      <meshLambertMaterial color="#8899aa" />
     </mesh>
   );
 }
@@ -77,7 +77,7 @@ function ElbowMesh({ start, end, centre }: { start: THREE.Vector3; end: THREE.Ve
   return (
     <mesh ref={tubeRef}>
       <tubeGeometry args={[curve, 20, 25, 12, false]} />
-      <meshStandardMaterial color="#7788aa" metalness={0.6} roughness={0.4} />
+      <meshLambertMaterial color="#7788aa" />
     </mesh>
   );
 }
@@ -86,7 +86,7 @@ function BoxMesh({ position, size, color }: { position: THREE.Vector3; size: [nu
   return (
     <mesh position={position}>
       <boxGeometry args={size} />
-      <meshStandardMaterial color={color} metalness={0.5} roughness={0.5} />
+      <meshLambertMaterial color={color} />
     </mesh>
   );
 }
@@ -106,7 +106,7 @@ function FlangeMesh({ start, end }: { start: THREE.Vector3; end: THREE.Vector3 }
   return (
     <mesh ref={meshRef} position={mid} quaternion={quaternion}>
       <cylinderGeometry args={[radius, radius, height, 24]} />
-      <meshStandardMaterial color="#667799" metalness={0.7} roughness={0.3} />
+      <meshLambertMaterial color="#667799" />
     </mesh>
   );
 }
@@ -126,7 +126,7 @@ function ReducerMesh({ start, end }: { start: THREE.Vector3; end: THREE.Vector3 
   return (
     <mesh ref={meshRef} position={mid} quaternion={quaternion}>
       <cylinderGeometry args={[r1, r2, length, 16]} />
-      <meshStandardMaterial color="#99887a" metalness={0.5} roughness={0.5} />
+      <meshLambertMaterial color="#99887a" />
     </mesh>
   );
 }
@@ -160,11 +160,11 @@ function TeeMesh({ centre, start, end }: { centre: THREE.Vector3; start: THREE.V
     <group position={centre}>
       <mesh quaternion={quaternion}>
         <cylinderGeometry args={[radius, radius, length, 16]} />
-        <meshStandardMaterial color="#8899aa" metalness={0.6} roughness={0.4} />
+        <meshLambertMaterial color="#8899aa" />
       </mesh>
       <mesh position={[0, branchOffset, 0]} quaternion={branchQuat}>
         <cylinderGeometry args={[radius * 0.8, radius * 0.8, branchLen, 16]} />
-        <meshStandardMaterial color="#8899aa" metalness={0.6} roughness={0.4} />
+        <meshLambertMaterial color="#8899aa" />
       </mesh>
     </group>
   );
@@ -174,7 +174,7 @@ function SphereFallback({ position }: { position: THREE.Vector3 }) {
   return (
     <mesh position={position}>
       <sphereGeometry args={[20, 16, 16]} />
-      <meshStandardMaterial color="#aabbcc" metalness={0.4} roughness={0.6} />
+      <meshLambertMaterial color="#aabbcc" />
     </mesh>
   );
 }
