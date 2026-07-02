@@ -589,6 +589,13 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
   const [panning, setPanning] = useState(false);
   const [dragStart, setDragStart] = useState({ clientX: 0, clientY: 0, tx: 0, ty: 0 });
 
+  const data = useMemo(() => normalizeData(components, edges), [components, edges]);
+  const { bounds, maxExtent } = data;
+
+  const symbolSize = Math.max(maxExtent * 0.02, 30);
+  const strokeW = 2;
+  const dim = Math.max(symbolSize * 0.8, 24);
+
   const getBaseScale = useCallback(() => {
     const svg = svgRef.current;
     if (!svg) return 1;
@@ -596,13 +603,6 @@ export function PcfIsoViewer({ sessionId, unitDisplay }: PcfIsoViewerProps) {
     if (!rect.width || !rect.height) return 1;
     return Math.max(bounds.width / rect.width, bounds.height / rect.height);
   }, [bounds.width, bounds.height]);
-
-  const data = useMemo(() => normalizeData(components, edges), [components, edges]);
-  const { bounds, maxExtent } = data;
-
-  const symbolSize = Math.max(maxExtent * 0.02, 30);
-  const strokeW = 2;
-  const dim = Math.max(symbolSize * 0.8, 24);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
