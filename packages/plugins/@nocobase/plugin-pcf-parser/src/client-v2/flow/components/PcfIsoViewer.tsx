@@ -40,27 +40,41 @@ interface PcfIsoViewerProps {
   height?: number;
 }
 
-const SQRT3 = Math.sqrt(3);
-const COS30 = SQRT3 / 2; // 0.8660
+const COS30 = Math.sqrt(3) / 2; // 0.8660
 const SIN30 = 0.5;
+const COS_DIM = Math.cos(Math.atan(0.5)); // ~0.894
+const SIN_DIM = Math.sin(Math.atan(0.5)); // ~0.447 (= 0.5/√1.25, the 2:1 dimetric ratio)
 
 function project(
   p: { x: number; y: number; z: number },
   mode: 'plan' | 'dimetric' | 'isometric' = 'plan',
 ): Point2D {
-  // PCF convention: X = horizontal east, Y = elevation (positive up), Z = horizontal north.
+  // PCF convention: X = horizontal east (main pipe direction for typical PCFs),
+  //                 Y = elevation (positive up),
+  //                 Z = horizontal north (branches off the main pipe).
   // SVG Y axis points down, so we negate when SVG-Y is meant to be "up on screen".
-  if (mode === 'dimetric') {
-    // 2:1 dimetric (engineering). Y axis goes up-right at ~26.57° (atan(0.5)),
-    // Z axis goes straight up on screen. The pipe main run is still mostly horizontal
-    // (Z stays "down" on screen, but X is the screen-horizontal axis).
-    return { x: p.x - p.y * 0.5, y: p.z + p.y * COS30 };
-  }
+  //
+  // We rotate the X-Z plane (the horizontal plane in 3D) by an angle so the main
+  // pipe appears at that angle on screen. Y is preserved as vertical elevation.
+  // The constant-y assumption in user data meant the previous "dimetric" was
+  // visually identical to plan — the X axis was never actually rotated.
   if (mode === 'isometric') {
-    // True isometric: X and Y both tilt at 30° off horizontal, Z straight up.
-    return { x: (p.x - p.y) * COS30, y: (p.x + p.y) * SIN30 - p.z };
+    // True 30° isometric: X axis goes down-right at 30°, Z axis goes down-left
+    // at 30° (perpendicular to X), Y stays vertical.
+    return {
+      x: (p.x - p.z) * COS30,
+      y: (p.x + p.z) * SIN30 - p.y,
+    };
   }
-  // plan (default, current behavior)
+  if (mode === 'dimetric') {
+    // 2:1 dimetric: same rotation but at atan(0.5) ≈ 26.57° below horizontal.
+    // X axis still tilts, just less steep.
+    return {
+      x: (p.x - p.z) * COS_DIM,
+      y: (p.x + p.z) * SIN_DIM - p.y,
+    };
+  }
+  // plan (default, current behavior): top-down X-Z view
   return { x: p.x, y: -p.z };
 }
 
@@ -679,18 +693,19 @@ export function PcfIsoViewer({
   const symbolSize = Math.max(maxExtent * 0.02, 30);
   const strokeW = 2;
   const dim = Math.max(symbolSize * 0.8, 24);
-  const labelFontSize = Math.max(maxExtent * 0.012, 16);
-  const labelOffsetY = symbolSize * 0.7;
-
-  // Counter-scale the label group so font size stays constant on screen
-  // when the user zooms in/out. The SVG scales the viewBox to the container
-  // by (container.width / bounds.width), and the inner content group further
-  // scales by transform.scale. To make the label render at `fontSize` pixels
-  // we need to invert that.
-  const labelCounterScale = useMemo(() => {
-    if (!containerSize.width || !bounds.width) return 1;
-    return bounds.width / (containerSize.width * transform.scale);
-  }, [containerSize.width, bounds.width, transform.scale]);
+  // Label is drawn INSIDE the content group (so it pans/zooms with the symbols).
+  // Convert "desired pixel size" → "viewBox units" so the rendered label is
+  // always ~14px tall regardless of the SVG's viewBox-to-container scale.
+  //   fontSize_viewBox = desiredPx * viewBox.width / containerPxWidth
+  // For unset / pre-mount container, fall back to a sane viewBox default.
+  const labelFontSizeVB =
+    containerSize.width && bounds.width
+      ? 14 * (bounds.width / containerSize.width)
+      : Math.max(maxExtent * 0.012, 16);
+  const labelOffsetYVB =
+    containerSize.width && bounds.width
+      ? 8 * (bounds.width / containerSize.width)
+      : symbolSize * 0.6;
 
   useEffect(() => {
     const el = svgRef.current;
@@ -893,21 +908,16 @@ export function PcfIsoViewer({
                   dim={dim}
                 />
               ))}
-            </g>
-            {showLabels && (
-              <g transform={`translate(${transform.x}, ${transform.y}) scale(${
-                transform.scale * labelCounterScale
-              })`}>
-                {data.components.map((comp) => (
+              {showLabels &&
+                data.components.map((comp) => (
                   <ComponentLabel
                     key={`lbl-${comp.id}`}
                     comp={comp}
-                    fontSize={labelFontSize}
-                    offsetY={labelOffsetY}
+                    fontSize={labelFontSizeVB}
+                    offsetY={labelOffsetYVB}
                   />
                 ))}
-              </g>
-            )}
+            </g>
           </svg>
         )}
       </div>
