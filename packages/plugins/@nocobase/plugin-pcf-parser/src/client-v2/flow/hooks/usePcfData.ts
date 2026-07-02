@@ -69,8 +69,6 @@ export function usePcfData(sessionId: string): UsePcfDataResult {
         setSession(Array.isArray(sessionData) ? sessionData[0] || null : null);
         const compData = compRes?.data?.data;
         setComponents(Array.isArray(compData) ? compData : []);
-        // eslint-disable-next-line no-console
-        console.log('[Pcf3DViewer][usePcfData] sessionId=', sessionId, ' compData.length=', Array.isArray(compData) ? compData.length : 'N/A', ' sample=', Array.isArray(compData) ? compData[0] : null);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         setError(message);

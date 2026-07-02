@@ -261,10 +261,9 @@ export class PCFParser {
         });
 
         // PCF stores pipe diameter in inches (NPS). PIPE-DIAMETER is
-        // preferred; BORE is the older alias. END-POINT may also carry
-        // a 4th value — if that one is already set, respect it. Convert
-        // to millimetres here so downstream rendering does not have to
-        // know about units.
+        // preferred; BORE is the older alias. Endpoints may already
+        // have a 4th END-POINT value (parseCoords converts that to mm
+        // as well), so PIPE-DIAMETER / BORE wins when present.
         const diameterInchesRaw =
           c.attributes['PIPE-DIAMETER']?.[0] ??
           c.attributes['BORE']?.[0] ??
@@ -275,8 +274,11 @@ export class PCFParser {
             ? diameterInchesNum * 25.4
             : undefined;
         if (diameterMm != null) {
+          // Overwrite — PIPE-DIAMETER / BORE is the authoritative
+          // source and takes priority over whatever the 4th END-POINT
+          // value already set.
           for (const ep of endpoints) {
-            if (ep && ep.bore == null) ep.bore = diameterMm;
+            if (ep) ep.bore = diameterMm;
           }
         }
 
@@ -324,8 +326,12 @@ function parseCoords(tokens: string[]): { x: number; y: number; z: number; bore?
   if (isNaN(x) || isNaN(y) || isNaN(z)) return null;
   const coords: { x: number; y: number; z: number; bore?: number } = { x, y, z };
   if (tokens.length >= 4) {
-    const bore = parseFloat(tokens[3]);
-    if (!isNaN(bore)) coords.bore = bore;
+    // The 4th value of END-POINT in this PCF family is the bore
+    // *in inches*, not in the same unit as the coordinates. Convert
+    // to millimetres so the downstream renderer doesn't have to know
+    // about units.
+    const boreInches = parseFloat(tokens[3]);
+    if (!isNaN(boreInches) && boreInches > 0) coords.bore = boreInches * 25.4;
   }
   return coords;
 }

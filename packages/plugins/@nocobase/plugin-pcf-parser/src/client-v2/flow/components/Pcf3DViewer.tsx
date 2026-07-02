@@ -47,17 +47,6 @@ function SceneContent({
       <ambientLight intensity={0.5} />
       <directionalLight position={[10, 10, 5]} intensity={1} />
       <OrbitControls makeDefault target={bounds.center} />
-      {/* Diagnostic markers — always render so we can see whether the
-          camera + scene are wired up at all, even when no component
-          data is present. */}
-      <mesh position={[0, 0, 0]}>
-        <sphereGeometry args={[Math.max(20, bounds.offset * 0.005), 8, 8]} />
-        <meshBasicMaterial color="red" />
-      </mesh>
-      <mesh position={bounds.center}>
-        <sphereGeometry args={[Math.max(20, bounds.offset * 0.005), 8, 8]} />
-        <meshBasicMaterial color="green" />
-      </mesh>
       {components.map((c) => (
         <ComponentNode key={c.id} component={c} />
       ))}
@@ -104,21 +93,6 @@ export const Pcf3DViewer: React.FC<Pcf3DViewerProps> = ({ sessionId, unitDisplay
     const [cx, cy, cz] = bounds.center;
     return [cx, cy + bounds.offset * 0.3, cz + bounds.offset];
   }, [bounds]);
-
-  // Diagnostic — print once per render so we can see what the renderer
-  // actually received. Safe to leave in (cost is one console.log per
-  // re-render, which only happens on prop change).
-  // eslint-disable-next-line no-console
-  console.log(
-    '[Pcf3DViewer] components=',
-    components.length,
-    ' first=',
-    components[0],
-    ' bounds=',
-    bounds,
-    ' cameraPos=',
-    cameraPosition,
-  );
 
   if (!hasWebGL()) {
     return (
@@ -190,13 +164,6 @@ export const Pcf3DViewer: React.FC<Pcf3DViewerProps> = ({ sessionId, unitDisplay
         </Suspense>
         <div style={{ position: 'absolute', bottom: 8, left: 8, fontSize: 12, color: '#999' }}>
           {components.length} components, {edges.length} connections
-        </div>
-        <div style={{ position: 'absolute', top: 8, right: 8, fontSize: 11, color: '#fff', background: 'rgba(0,0,0,0.55)', padding: '4px 8px', borderRadius: 4, maxWidth: 320, lineHeight: 1.45 }}>
-          <div>first: {components[0] ? `${components[0].componentType} #${components[0].id}` : '(none)'}</div>
-          <div>start: {components[0]?.startPoint ? JSON.stringify(components[0].startPoint) : 'null'}</div>
-          <div>end:&nbsp;&nbsp;{components[0]?.endPoint ? JSON.stringify(components[0].endPoint) : 'null'}</div>
-          <div>bore:&nbsp;&nbsp;{components[0]?.startPoint?.bore ?? 'none'}</div>
-          <div>bounds: {bounds.center.map((n) => Math.round(n)).join(',')} | off {Math.round(bounds.offset)}</div>
         </div>
       </div>
     </Card>
