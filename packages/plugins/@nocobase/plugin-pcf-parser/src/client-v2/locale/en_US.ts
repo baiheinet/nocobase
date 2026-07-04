@@ -15,9 +15,8 @@ export const enUS = {
   'Fit': 'Fit',
   'No components found for this session.': 'No components found for this session.',
   'Projection': 'Projection',
-  'Plan (X-Z top-down)': 'Plan (X-Z top-down)',
-  'Dimetric (2:1)': 'Dimetric (2:1)',
-  'True isometric (30°)': 'True isometric (30°)',
+  'Isometric': 'Isometric',
+  'Isometric angle': 'Isometric angle',
   'Show component labels': 'Show component labels',
 };
 

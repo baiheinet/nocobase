@@ -34,48 +34,24 @@ interface PcfIsoViewerProps {
   sessionId: string;
   unitDisplay: string;
   model?: unknown;
-  projection?: 'plan' | 'dimetric' | 'isometric';
+  projection?: 'isometric';
+  angle?: number;
   showLabels?: boolean;
   heightMode?: string;
   height?: number;
 }
 
-const COS30 = Math.sqrt(3) / 2; // 0.8660
-const SIN30 = 0.5;
-const COS_DIM = Math.cos(Math.atan(0.5)); // ~0.894
-const SIN_DIM = Math.sin(Math.atan(0.5)); // ~0.447 (= 0.5/√1.25, the 2:1 dimetric ratio)
-
 function project(
   p: { x: number; y: number; z: number },
-  mode: 'plan' | 'dimetric' | 'isometric' = 'plan',
+  angleDeg: number = 30,
 ): Point2D {
-  // PCF convention: X = horizontal east (main pipe direction for typical PCFs),
-  //                 Y = elevation (positive up),
-  //                 Z = horizontal north (branches off the main pipe).
-  // SVG Y axis points down, so we negate when SVG-Y is meant to be "up on screen".
-  //
-  // We rotate the X-Z plane (the horizontal plane in 3D) by an angle so the main
-  // pipe appears at that angle on screen. Y is preserved as vertical elevation.
-  // The constant-y assumption in user data meant the previous "dimetric" was
-  // visually identical to plan — the X axis was never actually rotated.
-  if (mode === 'isometric') {
-    // True 30° isometric: X axis goes down-right at 30°, Z axis goes down-left
-    // at 30° (perpendicular to X), Y stays vertical.
-    return {
-      x: (p.x - p.z) * COS30,
-      y: (p.x + p.z) * SIN30 - p.y,
-    };
-  }
-  if (mode === 'dimetric') {
-    // 2:1 dimetric: same rotation but at atan(0.5) ≈ 26.57° below horizontal.
-    // X axis still tilts, just less steep.
-    return {
-      x: (p.x - p.z) * COS_DIM,
-      y: (p.x + p.z) * SIN_DIM - p.y,
-    };
-  }
-  // plan (default, current behavior): top-down X-Z view
-  return { x: p.x, y: -p.z };
+  const rad = (angleDeg * Math.PI) / 180;
+  const cosA = Math.cos(rad);
+  const sinA = Math.sin(rad);
+  return {
+    x: (p.z - p.x) * cosA,
+    y: (p.x + p.z) * sinA - p.y,
+  };
 }
 
 function getAngle(from: Point2D, to: Point2D): number {
@@ -106,7 +82,7 @@ interface NormalizedData {
 function normalizeData(
   components: PcfComponent[],
   edges: PcfEdge[],
-  projection: 'plan' | 'dimetric' | 'isometric' = 'plan',
+  angleDeg: number = 30,
 ): NormalizedData {
   let minX = Infinity;
   let maxX = -Infinity;
@@ -114,9 +90,9 @@ function normalizeData(
   let maxY = -Infinity;
 
   const projected = components.map((comp) => {
-    const start2D = comp.startPoint ? project(comp.startPoint, projection) : null;
-    const end2D = comp.endPoint ? project(comp.endPoint, projection) : null;
-    const centre2D = comp.centrePoint ? project(comp.centrePoint, projection) : null;
+    const start2D = comp.startPoint ? project(comp.startPoint, angleDeg) : null;
+    const end2D = comp.endPoint ? project(comp.endPoint, angleDeg) : null;
+    const centre2D = comp.centrePoint ? project(comp.centrePoint, angleDeg) : null;
     return { ...comp, start2D, end2D, centre2D };
   });
 
@@ -136,8 +112,8 @@ function normalizeData(
 
   const projectedEdges = edges.map((edge) => ({
     ...edge,
-    start2D: project(edge.startPoint, projection),
-    end2D: project(edge.endPoint, projection),
+    start2D: project(edge.startPoint, angleDeg),
+    end2D: project(edge.endPoint, angleDeg),
   }));
 
   for (const edge of projectedEdges) {
@@ -244,7 +220,7 @@ function ComponentLabel({
 }) {
   const pos = pickLabelPos(comp);
   if (!pos) return null;
-  const text = comp.componentIdentifier || comp.componentType || '';
+  const text = comp.componentType || '';
   if (!text) return null;
   return (
     <text
@@ -670,7 +646,8 @@ function EdgeLine({
 export function PcfIsoViewer({
   sessionId,
   unitDisplay,
-  projection = 'dimetric',
+  projection = 'isometric',
+  angle = 30,
   showLabels = true,
   heightMode,
   height,
@@ -685,8 +662,8 @@ export function PcfIsoViewer({
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
   const data = useMemo(
-    () => normalizeData(components, edges, projection),
-    [components, edges, projection],
+    () => normalizeData(components, edges, angle),
+    [components, edges, angle],
   );
   const { bounds, maxExtent } = data;
 

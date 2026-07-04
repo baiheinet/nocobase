@@ -8,7 +8,8 @@ export class PcfIsoBlockModel extends DataBlockModel {
   renderComponent() {
     const sessionId = this.props?.sessionId || '';
     const unitDisplay = this.props?.unitDisplay || 'original';
-    const projection = this.props?.projection || 'dimetric';
+    const projection = this.props?.projection || 'isometric';
+    const angle = this.props?.angle ?? 30;
     const showLabels = this.props?.showLabels !== false;
     const { heightMode, height } = (this as any).decoratorProps || {};
     return (
@@ -16,6 +17,7 @@ export class PcfIsoBlockModel extends DataBlockModel {
         sessionId={sessionId}
         unitDisplay={unitDisplay}
         projection={projection}
+        angle={angle}
         showLabels={showLabels}
         heightMode={heightMode}
         height={height}
@@ -59,11 +61,20 @@ PcfIsoBlockModel.registerFlow({
           'x-decorator': 'FormItem',
           title: tExpr('Projection'),
           enum: [
-            { label: tExpr('Plan (X-Z top-down)'), value: 'plan' },
-            { label: tExpr('Dimetric (2:1)'), value: 'dimetric' },
-            { label: tExpr('True isometric (30°)'), value: 'isometric' },
+            { label: tExpr('Isometric'), value: 'isometric' },
           ],
-          default: 'dimetric',
+          default: 'isometric',
+        },
+        angle: {
+          type: 'number',
+          'x-component': 'Slider',
+          'x-decorator': 'FormItem',
+          title: tExpr('Isometric angle'),
+          'x-component-props': {
+            min: 1,
+            max: 89,
+          },
+          default: 30,
         },
         showLabels: {
           type: 'boolean',
@@ -77,7 +88,8 @@ PcfIsoBlockModel.registerFlow({
         ctx.model.setProps({
           sessionId: params.sessionId || '',
           unitDisplay: params.unitDisplay || 'original',
-          projection: params.projection || 'dimetric',
+          projection: params.projection || 'isometric',
+          angle: params.angle ?? 30,
           showLabels: params.showLabels !== false,
         });
       },
