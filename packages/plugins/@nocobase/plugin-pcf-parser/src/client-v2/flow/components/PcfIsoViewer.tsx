@@ -10,6 +10,7 @@ interface PcfComponent {
   pipelineReference: string;
   componentType: string;
   componentIdentifier: string | null;
+  posNumber: string | null;
   startPoint: { x: number; y: number; z: number; bore?: number } | null;
   endPoint: { x: number; y: number; z: number; bore?: number } | null;
   centrePoint: { x: number; y: number; z: number } | null;
@@ -37,6 +38,7 @@ interface PcfIsoViewerProps {
   projection?: 'isometric';
   angle?: number;
   showLabels?: boolean;
+  showPos?: boolean;
   heightMode?: string;
   height?: number;
 }
@@ -248,6 +250,78 @@ function ComponentLabel({
     >
       {text}
     </text>
+  );
+}
+
+function PosLabel({
+  comp,
+  fontSize,
+  symbolSize,
+  bounds,
+}: {
+  comp: PcfComponent & {
+    start2D: Point2D | null;
+    end2D: Point2D | null;
+    centre2D: Point2D | null;
+  };
+  fontSize: number;
+  symbolSize: number;
+  bounds: Bounds;
+}) {
+  const pos = pickLabelPos(comp);
+  if (!pos) return null;
+  const raw = comp.posNumber || '';
+  if (!raw) return null;
+  const text = `{${raw}}`;
+
+  const paddingX = fontSize * 0.4;
+  const paddingY = fontSize * 0.25;
+  const charWidth = fontSize * 0.6;
+  const width = text.length * charWidth + paddingX * 2;
+  const height = fontSize * 1.5;
+
+  const offsetX = symbolSize * 0.5 + width / 2;
+  const offsetY = symbolSize * 0.35;
+
+  let cx = pos.x - offsetX;
+  const cy = pos.y + offsetY;
+
+  if (cx - width / 2 < bounds.minX) {
+    cx = pos.x + offsetX;
+  } else if (cx + width / 2 > bounds.maxX) {
+    cx = pos.x - offsetX;
+  }
+
+  const x = cx - width / 2;
+  const y = cy - height / 2;
+
+  return (
+    <g style={{ pointerEvents: 'none', userSelect: 'none' }}>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        rx={fontSize * 0.25}
+        ry={fontSize * 0.25}
+        fill="#fff"
+        stroke="#bbb"
+        strokeWidth={fontSize * 0.12}
+      />
+      <text
+        x={cx}
+        y={cy}
+        fontSize={fontSize}
+        fill="#555"
+        stroke="#fff"
+        strokeWidth={fontSize * 0.18}
+        paintOrder="stroke fill"
+        textAnchor="middle"
+        dominantBaseline="middle"
+      >
+        {text}
+      </text>
+    </g>
   );
 }
 
@@ -660,6 +734,7 @@ export function PcfIsoViewer({
   projection = 'isometric',
   angle = 30,
   showLabels = true,
+  showPos = true,
   heightMode,
   height,
 }: PcfIsoViewerProps) {
@@ -903,6 +978,16 @@ export function PcfIsoViewer({
                     comp={comp}
                     fontSize={labelFontSizeVB}
                     offsetY={labelOffsetYVB}
+                  />
+                ))}
+              {showPos &&
+                data.components.map((comp) => (
+                  <PosLabel
+                    key={`pos-${comp.id}`}
+                    comp={comp}
+                    fontSize={labelFontSizeVB}
+                    symbolSize={symbolSize}
+                    bounds={bounds}
                   />
                 ))}
             </g>

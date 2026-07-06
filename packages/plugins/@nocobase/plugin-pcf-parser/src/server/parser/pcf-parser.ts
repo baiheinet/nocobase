@@ -287,6 +287,9 @@ export class PCFParser {
           pipelineReference: p.pipelineReference,
           componentType: c.type,
           componentIdentifier: c.attributes['COMPONENT-IDENTIFIER']?.[0] || null,
+          posNumber: c.attributes['POS']?.[0]
+            || c.attributes['COMPONENT-IDENTIFIER']?.[0]
+            || '',
           startPoint: endpoints[0] || null,
           endPoint: endpoints[1] || null,
           centrePoint: parseAttrCoords(c.attributes['CENTRE-POINT']?.[0]),
@@ -348,7 +351,7 @@ const KNOWN_COMPONENT_ATTRS = new Set([
   'END-POINT', 'CENTRE-POINT', 'SKEY', 'ITEM-CODE',
   'MATERIAL-IDENTIFIER', 'CATEGORY', 'CATEGORY-ERECTION',
   'CATEGORY-FABRICATION', 'ITEM-DESCRIPTION', 'WEIGHT',
-  'PIPING-SPEC', 'COMPONENT-IDENTIFIER',
+  'PIPING-SPEC', 'COMPONENT-IDENTIFIER', 'POS',
   'MASTER-COMPONENT-IDENTIFIER', 'UCI',
   'BOLT-DIA', 'BOLT-LENGTH', 'BOLT-QUANTITY',
   'SPINDLE-DIRECTION', 'ANGLE', 'FLANGE-LEFT-LOOSE',

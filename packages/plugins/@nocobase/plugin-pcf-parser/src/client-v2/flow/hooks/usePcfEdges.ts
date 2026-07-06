@@ -9,6 +9,7 @@ interface Point {
 interface PcfComponent {
   id: number;
   componentType: string;
+  posNumber: string | null;
   startPoint: Point | null;
   endPoint: Point | null;
   centrePoint: Point | null;

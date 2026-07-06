@@ -18,6 +18,7 @@ export const enUS = {
   'Isometric': 'Isometric',
   'Isometric angle': 'Isometric angle',
   'Show component labels': 'Show component labels',
+  'Show POS numbers': 'Show POS numbers',
 };
 
 export default enUS;

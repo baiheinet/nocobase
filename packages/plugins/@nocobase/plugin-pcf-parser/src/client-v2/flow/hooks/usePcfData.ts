@@ -16,6 +16,7 @@ interface PcfComponent {
   pipelineReference: string;
   componentType: string;
   componentIdentifier: string | null;
+  posNumber: string | null;
   startPoint: { x: number; y: number; z: number; bore?: number } | null;
   endPoint: { x: number; y: number; z: number; bore?: number } | null;
   centrePoint: { x: number; y: number; z: number } | null;

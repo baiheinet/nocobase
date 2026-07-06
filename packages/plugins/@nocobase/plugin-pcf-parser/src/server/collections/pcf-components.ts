@@ -33,6 +33,11 @@ export default {
       title: 'Component Identifier',
     },
     {
+      type: 'string',
+      name: 'posNumber',
+      title: 'POS Number',
+    },
+    {
       type: 'jsonb',
       name: 'startPoint',
       title: 'Start Point',
