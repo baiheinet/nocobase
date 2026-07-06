@@ -233,37 +233,21 @@ function ComponentLabel({
   const text = comp.componentType || '';
   if (!text) return null;
   if (!LABELED_TYPES.includes((comp.componentType || '').toUpperCase())) return null;
-  const labelY = pos.y - offsetY;
-  const textW = text.length * fontSize * 0.55;
-  const padX = fontSize * 0.5;
-  const rectW = textW + padX * 2;
-  const rectH = fontSize * 1.2;
   return (
-    <>
-      <rect
-        x={pos.x - rectW / 2}
-        y={labelY - rectH + fontSize * 0.25}
-        width={rectW}
-        height={rectH}
-        fill="#fff"
-        fillOpacity={0.85}
-        rx={3}
-      />
-      <text
-        x={pos.x}
-        y={labelY}
-        fontSize={fontSize}
-        fill="#333"
-        stroke="#fff"
-        strokeWidth={fontSize * 0.18}
-        paintOrder="stroke fill"
-        textAnchor="middle"
-        dominantBaseline="alphabetic"
-        style={{ pointerEvents: 'none', userSelect: 'none' }}
-      >
-        {text}
-      </text>
-    </>
+    <text
+      x={pos.x}
+      y={pos.y - offsetY}
+      fontSize={fontSize}
+      fill="#333"
+      stroke="#fff"
+      strokeWidth={fontSize * 0.18}
+      paintOrder="stroke fill"
+      textAnchor="middle"
+      dominantBaseline="alphabetic"
+      style={{ pointerEvents: 'none', userSelect: 'none' }}
+    >
+      {text}
+    </text>
   );
 }
 
