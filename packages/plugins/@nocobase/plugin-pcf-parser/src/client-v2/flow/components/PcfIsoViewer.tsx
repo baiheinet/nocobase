@@ -41,6 +41,16 @@ interface PcfIsoViewerProps {
   height?: number;
 }
 
+const LABELED_TYPES = [
+  'PIPE',
+  'ELBOW',
+  'BEND',
+  'TEE',
+  'BRANCH',
+  'VALVE',
+  'OLET',
+];
+
 function project(
   p: { x: number; y: number; z: number },
   angleDeg: number = 30,
@@ -222,6 +232,7 @@ function ComponentLabel({
   if (!pos) return null;
   const text = comp.componentType || '';
   if (!text) return null;
+  if (!LABELED_TYPES.includes((comp.componentType || '').toUpperCase())) return null;
   const labelY = pos.y - offsetY;
   const textW = text.length * fontSize * 0.55;
   const padX = fontSize * 0.5;
