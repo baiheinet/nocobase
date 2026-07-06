@@ -254,7 +254,15 @@ export class PCFParser {
 
     const componentRecords: ComponentRecord[] = [];
     for (const p of parseResult.pipelines) {
+      let weldIndex = 0;
       for (const c of p.components) {
+        if (c.type === 'WELD') {
+          weldIndex++;
+        }
+        const weldNumber = c.type === 'WELD'
+          ? (c.attributes['WELD-NUMBER']?.[0] || String(weldIndex))
+          : null;
+
         const endpoints = (c.attributes['END-POINT'] || []).map(ep => {
           const tokens = ep.split(/\s+/);
           return parseCoords(tokens);
@@ -300,6 +308,7 @@ export class PCFParser {
           itemDescription: c.attributes['ITEM-DESCRIPTION']?.[0] || null,
           weight: c.attributes['WEIGHT']?.[0] ? parseFloat(c.attributes['WEIGHT'][0]) : null,
           pipingSpec: c.attributes['PIPING-SPEC']?.[0] || null,
+          weldNumber,
           extraAttributes: getExtraComponentAttrs(c.attributes),
         });
       }
@@ -353,7 +362,7 @@ const KNOWN_COMPONENT_ATTRS = new Set([
   'BOLT-DIA', 'BOLT-LENGTH', 'BOLT-QUANTITY',
   'SPINDLE-DIRECTION', 'ANGLE', 'FLANGE-LEFT-LOOSE',
   'REPEAT-WELD-IDENTIFIER', 'WELD-ATTRIBUTE1',
-  'WELD-ATTRIBUTE2', 'WELD-ATTRIBUTE3',
+  'WELD-ATTRIBUTE2', 'WELD-ATTRIBUTE3', 'WELD-NUMBER',
   'ITEM-GROUP', 'LENGTH', 'QUANTITY', 'SIZE',
   'INSULATION-TYPE', 'INSULATION-THICKNESS',
   'CO-ORDS', 'CONNECTION-REFERENCE',
@@ -374,6 +383,7 @@ interface ComponentRecord {
   itemCode: string | null;
   itemDescription: string | null;
   pipelineReference: string;
+  weldNumber: string | null;
   [key: string]: unknown;
 }
 

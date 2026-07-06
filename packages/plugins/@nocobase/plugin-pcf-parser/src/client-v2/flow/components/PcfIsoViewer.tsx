@@ -14,6 +14,7 @@ interface PcfComponent {
   endPoint: { x: number; y: number; z: number; bore?: number } | null;
   centrePoint: { x: number; y: number; z: number } | null;
   materialIdentifier: string | null;
+  weldNumber: string | null;
 }
 
 interface Point2D {
@@ -37,6 +38,7 @@ interface PcfIsoViewerProps {
   projection?: 'isometric';
   angle?: number;
   showLabels?: boolean;
+  showWeldNumbers?: boolean;
   heightMode?: string;
   height?: number;
 }
@@ -247,6 +249,42 @@ function ComponentLabel({
       style={{ pointerEvents: 'none', userSelect: 'none' }}
     >
       {text}
+    </text>
+  );
+}
+
+function WeldNumberLabel({
+  comp,
+  fontSize,
+}: {
+  comp: PcfComponent & {
+    start2D: Point2D | null;
+    end2D: Point2D | null;
+    centre2D: Point2D | null;
+  };
+  fontSize: number;
+}) {
+  if ((comp.componentType || '').toUpperCase() !== 'WELD') return null;
+  if (!comp.weldNumber) return null;
+
+  const pos = comp.start2D || comp.centre2D || comp.end2D;
+  if (!pos) return null;
+
+  const offset = Math.max(fontSize * 0.55, 8);
+  return (
+    <text
+      x={pos.x + offset}
+      y={pos.y - offset}
+      fontSize={fontSize}
+      fill="#9E9E9E"
+      stroke="#fff"
+      strokeWidth={fontSize * 0.18}
+      paintOrder="stroke fill"
+      textAnchor="start"
+      dominantBaseline="alphabetic"
+      style={{ pointerEvents: 'none', userSelect: 'none' }}
+    >
+      {`<${comp.weldNumber}>`}
     </text>
   );
 }
@@ -660,6 +698,7 @@ export function PcfIsoViewer({
   projection = 'isometric',
   angle = 30,
   showLabels = true,
+  showWeldNumbers = true,
   heightMode,
   height,
 }: PcfIsoViewerProps) {
@@ -903,6 +942,14 @@ export function PcfIsoViewer({
                     comp={comp}
                     fontSize={labelFontSizeVB}
                     offsetY={labelOffsetYVB}
+                  />
+                ))}
+              {showWeldNumbers &&
+                data.components.map((comp) => (
+                  <WeldNumberLabel
+                    key={`weld-${comp.id}`}
+                    comp={comp}
+                    fontSize={labelFontSizeVB}
                   />
                 ))}
             </g>

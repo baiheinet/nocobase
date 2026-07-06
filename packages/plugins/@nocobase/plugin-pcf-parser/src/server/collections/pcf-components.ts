@@ -83,6 +83,11 @@ export default {
       title: 'Piping Spec',
     },
     {
+      type: 'string',
+      name: 'weldNumber',
+      title: 'Weld Number',
+    },
+    {
       type: 'jsonb',
       name: 'extraAttributes',
       title: 'Extra Attributes',
