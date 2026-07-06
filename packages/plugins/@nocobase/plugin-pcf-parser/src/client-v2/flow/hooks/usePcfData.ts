@@ -26,6 +26,7 @@ interface PcfComponent {
   itemDescription: string | null;
   weight: number | null;
   pipingSpec: string | null;
+  specClass: string | null;
   extraAttributes: Record<string, string[]> | null;
 }
 

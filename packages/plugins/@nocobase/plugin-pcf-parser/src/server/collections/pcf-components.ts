@@ -83,6 +83,11 @@ export default {
       title: 'Piping Spec',
     },
     {
+      type: 'string',
+      name: 'specClass',
+      title: 'Spec Class',
+    },
+    {
       type: 'jsonb',
       name: 'extraAttributes',
       title: 'Extra Attributes',

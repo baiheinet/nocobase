@@ -11,6 +11,7 @@ export class PcfIsoBlockModel extends DataBlockModel {
     const projection = this.props?.projection || 'isometric';
     const angle = this.props?.angle ?? 30;
     const showLabels = this.props?.showLabels !== false;
+    const showSpecClass = this.props?.showSpecClass !== false;
     const { heightMode, height } = (this as any).decoratorProps || {};
     return (
       <PcfIsoViewer
@@ -19,6 +20,7 @@ export class PcfIsoBlockModel extends DataBlockModel {
         projection={projection}
         angle={angle}
         showLabels={showLabels}
+        showSpecClass={showSpecClass}
         heightMode={heightMode}
         height={height}
         model={this}
@@ -83,6 +85,13 @@ PcfIsoBlockModel.registerFlow({
           title: tExpr('Show component labels'),
           default: true,
         },
+        showSpecClass: {
+          type: 'boolean',
+          'x-component': 'Switch',
+          'x-decorator': 'FormItem',
+          title: tExpr('Show spec class'),
+          default: true,
+        },
       },
       handler(ctx, params) {
         ctx.model.setProps({
@@ -91,6 +100,7 @@ PcfIsoBlockModel.registerFlow({
           projection: params.projection || 'isometric',
           angle: params.angle ?? 30,
           showLabels: params.showLabels !== false,
+          showSpecClass: params.showSpecClass !== false,
         });
       },
     },

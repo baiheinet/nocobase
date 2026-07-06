@@ -14,6 +14,7 @@ interface PcfComponent {
   endPoint: { x: number; y: number; z: number; bore?: number } | null;
   centrePoint: { x: number; y: number; z: number } | null;
   materialIdentifier: string | null;
+  specClass: string | null;
 }
 
 interface Point2D {
@@ -37,6 +38,7 @@ interface PcfIsoViewerProps {
   projection?: 'isometric';
   angle?: number;
   showLabels?: boolean;
+  showSpecClass?: boolean;
   heightMode?: string;
   height?: number;
 }
@@ -215,6 +217,63 @@ function pickLabelPos(
   return comp.start2D || comp.end2D;
 }
 
+function pointsEqual3D(
+  a: { x: number; y: number; z: number },
+  b: { x: number; y: number; z: number },
+  tolerance: number = 0.5,
+): boolean {
+  return (
+    Math.abs(a.x - b.x) <= tolerance &&
+    Math.abs(a.y - b.y) <= tolerance &&
+    Math.abs(a.z - b.z) <= tolerance
+  );
+}
+
+function computeSpecClassLabelIds(
+  components: NormalizedData['components'],
+  edges: NormalizedData['edges'],
+): Set<number> {
+  const labelIds = new Set<number>();
+  const compMap = new Map(components.map((c) => [c.id, c]));
+
+  for (const edge of edges) {
+    const a = compMap.get(edge.fromId);
+    const b = compMap.get(edge.toId);
+    if (!a || !b) continue;
+    if (a.componentType !== 'PIPE' || b.componentType !== 'PIPE') continue;
+
+    const specA = a.specClass;
+    const specB = b.specClass;
+    if (!specA || !specB || specA === specB) continue;
+
+    const aStart = a.startPoint;
+    const aEnd = a.endPoint;
+    const bStart = b.startPoint;
+    const bEnd = b.endPoint;
+
+    const aEndIsEdgeStart = aEnd && pointsEqual3D(aEnd, edge.startPoint);
+    const bStartIsEdgeEnd = bStart && pointsEqual3D(bStart, edge.endPoint);
+    if (aEndIsEdgeStart && bStartIsEdgeEnd) {
+      labelIds.add(b.id);
+      continue;
+    }
+
+    const bEndIsEdgeStart = bEnd && pointsEqual3D(bEnd, edge.startPoint);
+    const aStartIsEdgeEnd = aStart && pointsEqual3D(aStart, edge.endPoint);
+    if (bEndIsEdgeStart && aStartIsEdgeEnd) {
+      labelIds.add(a.id);
+      continue;
+    }
+
+    // Direction is ambiguous (e.g. start-to-start or end-to-end connection).
+    // Label both sides so the transition is visible regardless of flow.
+    labelIds.add(a.id);
+    labelIds.add(b.id);
+  }
+
+  return labelIds;
+}
+
 function ComponentLabel({
   comp,
   fontSize,
@@ -247,6 +306,41 @@ function ComponentLabel({
       style={{ pointerEvents: 'none', userSelect: 'none' }}
     >
       {text}
+    </text>
+  );
+}
+
+function SpecClassLabel({
+  comp,
+  fontSize,
+  offsetY,
+}: {
+  comp: PcfComponent & {
+    start2D: Point2D | null;
+    end2D: Point2D | null;
+    centre2D: Point2D | null;
+  };
+  fontSize: number;
+  offsetY: number;
+}) {
+  const pos = pickLabelPos(comp);
+  if (!pos) return null;
+  const text = comp.specClass;
+  if (!text) return null;
+  return (
+    <text
+      x={pos.x}
+      y={pos.y - offsetY}
+      fontSize={fontSize}
+      fill="#C62828"
+      stroke="#fff"
+      strokeWidth={fontSize * 0.18}
+      paintOrder="stroke fill"
+      textAnchor="middle"
+      dominantBaseline="alphabetic"
+      style={{ pointerEvents: 'none', userSelect: 'none' }}
+    >
+      {`CLASS: ${text}`}
     </text>
   );
 }
@@ -660,6 +754,7 @@ export function PcfIsoViewer({
   projection = 'isometric',
   angle = 30,
   showLabels = true,
+  showSpecClass = true,
   heightMode,
   height,
 }: PcfIsoViewerProps) {
@@ -694,6 +789,17 @@ export function PcfIsoViewer({
     containerSize.width && bounds.width
       ? 18 * (bounds.width / containerSize.width)
       : symbolSize * 0.6;
+  // Spec-class label sits 32 screen-pixels above the POS component label.
+  const specLabelExtraYVB =
+    containerSize.width && bounds.width
+      ? 32 * (bounds.width / containerSize.width)
+      : Math.max(maxExtent * 0.012, 16) * (32 / 14);
+  const specLabelOffsetYVB = labelOffsetYVB + specLabelExtraYVB;
+
+  const specLabelIds = useMemo(
+    () => computeSpecClassLabelIds(data.components, data.edges),
+    [data.components, data.edges],
+  );
 
   useEffect(() => {
     const el = svgRef.current;
@@ -905,6 +1011,17 @@ export function PcfIsoViewer({
                     offsetY={labelOffsetYVB}
                   />
                 ))}
+              {showSpecClass &&
+                data.components
+                  .filter((comp) => comp.componentType === 'PIPE' && specLabelIds.has(comp.id))
+                  .map((comp) => (
+                    <SpecClassLabel
+                      key={`spec-${comp.id}`}
+                      comp={comp}
+                      fontSize={labelFontSizeVB}
+                      offsetY={specLabelOffsetYVB}
+                    />
+                  ))}
             </g>
           </svg>
         )}

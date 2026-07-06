@@ -300,6 +300,7 @@ export class PCFParser {
           itemDescription: c.attributes['ITEM-DESCRIPTION']?.[0] || null,
           weight: c.attributes['WEIGHT']?.[0] ? parseFloat(c.attributes['WEIGHT'][0]) : null,
           pipingSpec: c.attributes['PIPING-SPEC']?.[0] || null,
+          specClass: c.attributes['PIPING-CLASS']?.[0] || c.attributes['SPEC']?.[0] || null,
           extraAttributes: getExtraComponentAttrs(c.attributes),
         });
       }
@@ -348,7 +349,7 @@ const KNOWN_COMPONENT_ATTRS = new Set([
   'END-POINT', 'CENTRE-POINT', 'SKEY', 'ITEM-CODE',
   'MATERIAL-IDENTIFIER', 'CATEGORY', 'CATEGORY-ERECTION',
   'CATEGORY-FABRICATION', 'ITEM-DESCRIPTION', 'WEIGHT',
-  'PIPING-SPEC', 'COMPONENT-IDENTIFIER',
+  'PIPING-SPEC', 'PIPING-CLASS', 'SPEC', 'COMPONENT-IDENTIFIER',
   'MASTER-COMPONENT-IDENTIFIER', 'UCI',
   'BOLT-DIA', 'BOLT-LENGTH', 'BOLT-QUANTITY',
   'SPINDLE-DIRECTION', 'ANGLE', 'FLANGE-LEFT-LOOSE',
