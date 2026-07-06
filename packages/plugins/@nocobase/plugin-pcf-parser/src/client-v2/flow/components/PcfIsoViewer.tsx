@@ -15,6 +15,7 @@ interface PcfComponent {
   endPoint: { x: number; y: number; z: number; bore?: number } | null;
   centrePoint: { x: number; y: number; z: number } | null;
   materialIdentifier: string | null;
+  weldNumber: string | null;
 }
 
 interface Point2D {
@@ -39,6 +40,7 @@ interface PcfIsoViewerProps {
   angle?: number;
   showLabels?: boolean;
   showPos?: boolean;
+  showWeldNumbers?: boolean;
   heightMode?: string;
   height?: number;
 }
@@ -735,6 +737,7 @@ export function PcfIsoViewer({
   angle = 30,
   showLabels = true,
   showPos = true,
+  showWeldNumbers = true,
   heightMode,
   height,
 }: PcfIsoViewerProps) {

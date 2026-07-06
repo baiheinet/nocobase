@@ -19,6 +19,7 @@ export const zhCN = {
   'Isometric angle': '轴测角度',
   'Show component labels': '显示 component 标注',
   'Show POS numbers': '显示 POS 编号',
+  'Show weld numbers': '显示焊点编号',
 };
 
 export default zhCN;
