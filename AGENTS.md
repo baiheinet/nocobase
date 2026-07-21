@@ -46,3 +46,13 @@ If a file `AGENTS.local.md` exists in this repository root, read it once at the 
 ## Commit Conventions
 
 - Commit messages follow Conventional Commits, prefixed with the affected scope: `fix(plugin-workflow): ...`, `feat(client): ...`, `chore: ...`, `docs: ...`.
+
+## Worktree & Build Discipline
+
+- **One repo, one worktree.** Use the runtime-managed worktree (or `git worktree add` from the repo root) as the single working copy. Do **not** `git clone` the same repo into a separate path inside your workdir — that second clone drifts from the tracked worktree, the wrong copy is the one that gets committed and pushed, and the runtime no longer knows what your real branch is. If you need a fresh checkout, use `git worktree add` (or the runtime's `repo checkout` command), not a new `git clone`.
+- **No push without a verified build.** Before `git push`:
+  - Run `yarn eslint --fix` on the touched files; resolve remaining warnings instead of disabling them.
+  - TypeScript: at minimum, ensure the touched package typechecks (file-scope or `tsc --noEmit`). For client surfaces (v1 `src/client/`, v2 `src/client-v2/`), run the matching build target (`yarn build:client` / `yarn build:client-v2`) — these have historically broken from missing exports and stray braces that the IDE misses.
+  - For server changes, also build the server package so the new code is exercised by the loader, not just the type checker.
+- **No "fix build" follow-up commits.** If a build error is discovered in your own work, fix it in the same commit chain (amend if it is the only commit, or a follow-up commit that is part of the same PR). A "fix build" commit pushed as a reaction to a red CI on a different commit pollutes history and hides the original problem — find the root cause and roll it into the original commit.
+- **No arbitrary build attempts.** Running `npm run build` / `yarn build` speculatively, without first reading what the change actually requires, wastes runtime and produces noisy red output that gets ignored. Decide which build target the change needs (client v1, client v2, server, a specific package), and run only that.
