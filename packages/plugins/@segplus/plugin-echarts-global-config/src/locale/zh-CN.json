@@ -1,5 +1,17 @@
 {
   "ECharts theme": "ECharts 主题",
+  "ECharts configuration": "ECharts 配置",
   "Vintage": "复古",
-  "Macarons": "马卡龙"
+  "Macarons": "马卡龙",
+  "Default theme": "默认主题",
+  "Default option (JSON)": "默认 option (JSON)",
+  "Default option must be a JSON object": "默认 option 必须是一个 JSON 对象",
+  "Invalid JSON in Default option": "默认 option 的 JSON 格式不合法",
+  "ECharts configuration saved": "ECharts 配置已保存",
+  "Set the platform-wide defaults for ECharts. These values are merged into every <ECharts> instance (local option overrides global).": "设置 ECharts 的平台级默认值,所有 <ECharts> 实例都会合并这些配置(本地 option 覆盖全局)。",
+  "Raw ECharts option object. Merge rules: plain objects deep-merge, arrays replace, primitives override.": "原始 ECharts option 对象。合并规则:纯对象深合并,数组整组替换,基本类型覆盖。",
+  "Use ECharts default": "使用 ECharts 默认",
+  "Save": "保存",
+  "Reset": "重置",
+  "Saved": "已保存"
 }

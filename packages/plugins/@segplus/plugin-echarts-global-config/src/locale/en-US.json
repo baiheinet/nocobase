@@ -1,5 +1,17 @@
 {
   "ECharts theme": "ECharts theme",
+  "ECharts configuration": "ECharts configuration",
   "Vintage": "Vintage",
-  "Macarons": "Macarons"
+  "Macarons": "Macarons",
+  "Default theme": "Default theme",
+  "Default option (JSON)": "Default option (JSON)",
+  "Default option must be a JSON object": "Default option must be a JSON object",
+  "Invalid JSON in Default option": "Invalid JSON in Default option",
+  "ECharts configuration saved": "ECharts configuration saved",
+  "Set the platform-wide defaults for ECharts. These values are merged into every <ECharts> instance (local option overrides global).": "Set the platform-wide defaults for ECharts. These values are merged into every <ECharts> instance (local option overrides global).",
+  "Raw ECharts option object. Merge rules: plain objects deep-merge, arrays replace, primitives override.": "Raw ECharts option object. Merge rules: plain objects deep-merge, arrays replace, primitives override.",
+  "Use ECharts default": "Use ECharts default",
+  "Save": "Save",
+  "Reset": "Reset",
+  "Saved": "Saved"
 }

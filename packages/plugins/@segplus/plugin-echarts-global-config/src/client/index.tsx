@@ -11,6 +11,7 @@ import { Plugin } from '@nocobase/client';
 import React from 'react';
 
 import { EChartsConfigProvider } from './hooks';
+import { tStr } from './locale';
 
 export class PluginEchartsGlobalConfigClient extends Plugin {
   async load() {
@@ -25,6 +26,19 @@ export class PluginEchartsGlobalConfigClient extends Plugin {
       name: 'echarts',
       sort: 320,
       Component: React.lazy(() => import('./settings/EChartsSettings').then((m) => ({ default: m.EChartsSettings }))),
+    });
+
+    // 插件设置中心（/admin/settings/）注册 ECharts configuration 入口。
+    // 仿 @nocobase/plugin-theme-editor 的 pluginSettingsManager.add 模式。
+    // 持久化当前沿用 localStorage（与个人中心共享同一 key），等用户拍板
+    // 「持久化策略」（issue BAI-43 Q1）后改走服务端 collection；那时再加
+    // 显式 aclSnippet 与服务端 registerSnippet。
+    this.app.pluginSettingsManager.add('@segplus/plugin-echarts-global-config', {
+      title: tStr('ECharts configuration'),
+      icon: 'PieChartOutlined',
+      Component: React.lazy(() =>
+        import('./settings/EChartsAdminSettings').then((m) => ({ default: m.EChartsAdminSettings })),
+      ),
     });
   }
 }
