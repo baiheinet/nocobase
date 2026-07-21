@@ -8,10 +8,9 @@
  */
 
 import { UserCenterSelectItemModel } from '@nocobase/client-v2';
-// @ts-ignore
-import pkg from '../../../package.json';
 import { ECHARTS_THEME_OPTIONS } from '../echarts/echartsThemeOptions';
 import { loadStoredEChartsConfig, saveStoredEChartsConfig } from '../echarts/echartsConfigStorage';
+import { translateEchartsGlobalConfig } from '../locale';
 
 /**
  * v2 user-center（右上角头像 → 设置）里的「ECharts theme」下拉项。
@@ -26,14 +25,14 @@ export class EChartsUserCenterItemModel extends UserCenterSelectItemModel {
 
   section = 'preferences' as const;
   sort = 320;
+  label = 'ECharts theme';
 
   async prepare() {
-    const t = (key: string) => this.context.t(key, { ns: [pkg.name, 'client'], nsMode: 'fallback' });
     const config = loadStoredEChartsConfig() ?? {};
 
-    this.label = t('ECharts theme');
+    this.label = translateEchartsGlobalConfig(this.context, 'ECharts theme');
     this.options = ECHARTS_THEME_OPTIONS.map((o) => ({
-      label: t(o.label),
+      label: translateEchartsGlobalConfig(this.context, o.label),
       value: o.value,
     }));
     this.value = config.theme ?? '';
