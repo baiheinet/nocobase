@@ -1,5 +1,5 @@
 {
-  "name": "@nocobase/plugin-echarts-global-config",
+  "name": "@segplus/plugin-echarts-global-config",
   "displayName": "ECharts global config",
   "displayName.zh-CN": "ECharts 全局配置",
   "description": "User-level global ECharts config (theme + option) for NocoBase, kept independent from the official data-visualization plugin.",
