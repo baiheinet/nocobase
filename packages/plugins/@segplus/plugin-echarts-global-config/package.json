@@ -1,0 +1,25 @@
+{
+  "name": "@nocobase/plugin-echarts-global-config",
+  "displayName": "ECharts global config",
+  "displayName.zh-CN": "ECharts 全局配置",
+  "description": "User-level global ECharts config (theme + option) for NocoBase, kept independent from the official data-visualization plugin.",
+  "description.zh-CN": "NocoBase 用户级 ECharts 全局配置（主题 + option），独立于官方数据可视化插件。",
+  "version": "2.1.25",
+  "main": "dist/server/index.js",
+  "devDependencies": {
+    "echarts": "^6.0.0",
+    "lodash": "^4.17.21",
+    "react": "^18.2.0",
+    "react-i18next": "^11.15.1"
+  },
+  "peerDependencies": {
+    "@nocobase/client": "2.x",
+    "@nocobase/client-v2": "2.x",
+    "@nocobase/server": "2.x",
+    "@nocobase/test": "2.x"
+  },
+  "keywords": [
+    "Blocks"
+  ],
+  "license": "Apache-2.0"
+}
