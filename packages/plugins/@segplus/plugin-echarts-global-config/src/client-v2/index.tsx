@@ -51,6 +51,5 @@ export class PluginEchartsGlobalConfigClient extends Plugin<any, Application> {
     });
   }
 }
-}
 
 export default PluginEchartsGlobalConfigClient;
