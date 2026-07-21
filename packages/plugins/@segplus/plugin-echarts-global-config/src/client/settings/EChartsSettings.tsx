@@ -27,8 +27,10 @@ export const EChartsSettings: React.FC = () => {
       title={t('ECharts theme')}
       options={options}
       value={config.theme ?? ''}
-      onChange={(value: string) => {
-        setConfig({ ...config, theme: value || undefined });
+      onChange={async (value: string) => {
+        // setConfig 内部已经写 localStorage + 派发事件，charts 立即重渲；
+        // await 只是让 setConfig 的「本地 → 服务端」链路有机会跑完。
+        await setConfig({ ...config, theme: value || undefined });
       }}
     />
   );

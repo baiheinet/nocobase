@@ -7,11 +7,17 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
+import { useEffect, useState } from 'react';
 import mergeWith from 'lodash/mergeWith';
 import isPlainObject from 'lodash/isPlainObject';
 import type { EChartsOption, EChartsType } from 'echarts';
 import { ensureEChartsThemesRegistered } from '../echarts/echartsThemes';
-import { loadStoredEChartsConfig, saveStoredEChartsConfig } from '../echarts/echartsConfigStorage';
+import {
+  loadRemoteEChartsConfig,
+  loadStoredEChartsConfig,
+  saveRemoteEChartsConfig,
+  saveStoredEChartsConfig,
+} from '../echarts/echartsConfigStorage';
 
 export interface EChartsGlobalConfig {
   /**
@@ -53,26 +59,81 @@ function dispatchConfigChange(): void {
   }
 }
 
-/** 读取当前全局 ECharts 配置（无持久化时返回空对象）。 */
+/**
+ * 模块级 app 引用，由 plugin load() 时注入。storage 与 hooks 都不应该反向依赖
+ * @nocobase/client-v2，所以通过这个单例传 api。
+ */
+let _app: { api: unknown } | undefined;
+export function setEChartsConfigApp(app: { api: unknown }): void {
+  _app = app;
+}
+
+/**
+ * 把服务端真值拉到 localStorage 的「一次性 init」。
+ * plugin load() 时调一次，模块级 promise 去重，network 失败静默降级。
+ */
+let initStarted = false;
+let initPromise: Promise<void> | undefined;
+export function initEChartsGlobalConfigFromServer(): Promise<void> | undefined {
+  if (initStarted) return initPromise;
+  if (!_app?.api) return undefined;
+  initStarted = true;
+  initPromise = (async () => {
+    try {
+      const remote = await loadRemoteEChartsConfig(_app!.api as never);
+      if (!remote) return;
+      const current = loadStoredEChartsConfig();
+      if (JSON.stringify(current ?? {}) === JSON.stringify(remote)) return;
+      saveStoredEChartsConfig(remote);
+      dispatchConfigChange();
+    } catch {
+      // server unreachable / ACL denied, use localStorage
+    }
+  })();
+  return initPromise;
+}
+
+/**
+ * 读取当前全局 ECharts 配置。
+ *
+ * v2 没有 Provider（v1/v2 context 分裂 + 懒加载 chunk 会让 Provider 边界与
+ * 组件边界不一致），改成在 hook 内部 useState 持有当前值 + useEffect 订阅
+ * ECHARTS_CONFIG_CHANGE_EVENT，所有 setConfig 路径都会派发该事件，hook 自动 re-render。
+ */
 export function useEChartsGlobalConfig(): EChartsGlobalConfig {
-  return loadStoredEChartsConfig() ?? {};
+  const [config, setConfig] = useState<EChartsGlobalConfig>(() => loadStoredEChartsConfig() ?? {});
+  useEffect(() => {
+    const handler = () => setConfig(loadStoredEChartsConfig() ?? {});
+    window.addEventListener(ECHARTS_CONFIG_CHANGE_EVENT, handler);
+    return () => window.removeEventListener(ECHARTS_CONFIG_CHANGE_EVENT, handler);
+  }, []);
+  return config;
 }
 
 /**
  * 获取修改全局配置的 setter（settings 页 / user-center 项用）。
- * 直接写 localStorage + 派发变更事件，保证 charts 能即时响应主题切换。
+ * 同步写 localStorage + 派发事件（charts 立即响应）；异步写服务端（跨设备同步）。
+ * 服务端失败仅 console.warn，不阻塞 UI —— admin settings 页会在自己的
+ * handleSave 里 await 并 surface 错误。
  */
-export function useSetEChartsGlobalConfig(): (next: EChartsGlobalConfig) => void {
-  return (next: EChartsGlobalConfig) => {
+export function useSetEChartsGlobalConfig(): (next: EChartsGlobalConfig) => Promise<void> {
+  return async (next: EChartsGlobalConfig) => {
     saveStoredEChartsConfig(next);
     dispatchConfigChange();
+    if (_app?.api) {
+      try {
+        await saveRemoteEChartsConfig(_app.api as never, next);
+      } catch (err) {
+        console.warn('[echarts-global-config] failed to sync to server', err);
+      }
+    }
   };
 }
 
 /**
  * 推导最终 echarts 主题名，优先级：
  *   1. 本地 theme prop 显式传入 → 最高
- *   2. 持久化主题（localStorage，用户级个性化配置的真值来源）→ 其次
+ *   2. 持久化主题（localStorage 用户级缓存，真值在服务端）→ 其次
  *
  * Light / Dark 不在此处理：交给 NocoBase 全局 Theme 设置，本插件只承载具名 echarts 主题。
  * 主题直接读 localStorage 而非 React context —— 这样无论 <ECharts> 与 settings 页

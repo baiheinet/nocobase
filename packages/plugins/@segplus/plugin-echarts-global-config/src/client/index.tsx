@@ -10,15 +10,17 @@
 import { Plugin } from '@nocobase/client';
 import React from 'react';
 
-import { EChartsConfigProvider } from './hooks';
+import { EChartsConfigProvider, setEChartsConfigApp } from './hooks';
 import { tStr } from './locale';
 
 export class PluginEchartsGlobalConfigClient extends Plugin {
   async load() {
-    // 应用根部挂一次全局 ECharts 配置 Provider（配置从 localStorage 读取，
-    // 这是用户级个性化配置，非平台级 admin 设置）。settings 页（挂在个人中心）
-    // 通过 useSetEChartsGlobalConfig() 写入。本插件完全独立于 plugin-data-visualization，
-    // 因此无法主动通知其 <ECharts> 组件重渲 —— 切换主题后用户需刷新页面生效。
+    // 把 app 引用注入 hooks 模块 —— storage 层（不依赖 @nocobase/client）
+    // 通过这个单例拿到 api，调用 :list/:create/:update 走服务端 themeConfig 行。
+    setEChartsConfigApp(this.app);
+
+    // 应用根部挂一次全局 ECharts 配置 Provider（localStorage 是首屏同步读源，
+    // mount 后会异步从服务端 themeConfig 拉一次拉到再写 localStorage）。
     this.app.use(EChartsConfigProvider);
 
     // 个人中心（右上角头像 → 设置）注册 ECharts 个性化配置 tab。
@@ -30,12 +32,13 @@ export class PluginEchartsGlobalConfigClient extends Plugin {
 
     // 插件设置中心（/admin/settings/）注册 ECharts configuration 入口。
     // 仿 @nocobase/plugin-theme-editor 的 pluginSettingsManager.add 模式。
-    // 持久化当前沿用 localStorage（与个人中心共享同一 key），等用户拍板
-    // 「持久化策略」（issue BAI-43 Q1）后改走服务端 collection；那时再加
-    // 显式 aclSnippet 与服务端 registerSnippet。
+    // 持久化走服务端 themeConfig 行（uid='echarts-global-config'），不再依赖
+    // localStorage —— 见 src/server/plugin.ts 的 ACL snippet 与
+    // src/client/echarts/echartsConfigStorage.ts 的 load/saveRemoteEChartsConfig。
     this.app.pluginSettingsManager.add('@segplus/plugin-echarts-global-config', {
       title: tStr('ECharts configuration'),
       icon: 'PieChartOutlined',
+      aclSnippet: 'pm.echarts-global-config.admin',
       Component: React.lazy(() =>
         import('./settings/EChartsAdminSettings').then((m) => ({ default: m.EChartsAdminSettings })),
       ),

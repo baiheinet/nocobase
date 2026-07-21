@@ -10,31 +10,36 @@
 import { Button, Form, Input, Select, Space, message } from 'antd';
 import React, { useEffect, useState } from 'react';
 import { ECHARTS_THEME_OPTIONS } from '../echarts/echartsThemes';
-import { loadStoredEChartsConfig, saveStoredEChartsConfig } from '../echarts/echartsConfigStorage';
+import { useEChartsGlobalConfig, useSetEChartsGlobalConfig } from '../hooks';
 import { useT } from '../locale';
 
 /**
  * 插件设置中心里的「ECharts configuration」页面（v2 / client-v2）。
  *
  * 跟 v1 的 EChartsAdminSettings 行为一致 —— v2 重新实现一份是为了保持 v1/v2 客户端
- * 入口的解耦（v2 不可 import v1 @nocobase/client）。两份组件共用相同的
- * loadStoredEChartsConfig / saveStoredEChartsConfig，所以存储层一致。
+ * 入口的解耦（v2 不可 import v1 @nocobase/client）。两份共用相同的
+ * load/saveRemoteEChartsConfig，所以存储层一致。
  *
  * 持久化说明详见 v1 EChartsAdminSettings 头部注释。
  */
 const EChartsAdminSettingsPage: React.FC = () => {
   const t = useT();
-  const [theme, setTheme] = useState<string>('');
-  const [optionJson, setOptionJson] = useState<string>('');
+  const config = useEChartsGlobalConfig();
+  const setConfig = useSetEChartsGlobalConfig();
+  const [theme, setTheme] = useState<string>(config.theme ?? '');
+  const [optionJson, setOptionJson] = useState<string>(
+    config.option ? JSON.stringify(config.option, null, 2) : '',
+  );
+  const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   useEffect(() => {
-    const config = loadStoredEChartsConfig();
-    setTheme(config?.theme ?? '');
-    setOptionJson(config?.option ? JSON.stringify(config.option, null, 2) : '');
-  }, []);
+    setTheme(config.theme ?? '');
+    setOptionJson(config.option ? JSON.stringify(config.option, null, 2) : '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.theme, config.option ? JSON.stringify(config.option) : '']);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     let parsedOption: Record<string, unknown> | undefined;
     const trimmed = optionJson.trim();
     if (trimmed) {
@@ -51,12 +56,20 @@ const EChartsAdminSettingsPage: React.FC = () => {
         return;
       }
     }
-    saveStoredEChartsConfig({
-      theme: theme || undefined,
-      option: parsedOption,
-    });
-    setSavedAt(Date.now());
-    message.success(t('ECharts configuration saved'));
+    setSaving(true);
+    try {
+      await setConfig({
+        theme: theme || undefined,
+        option: parsedOption,
+      });
+      setSavedAt(Date.now());
+      message.success(t('ECharts configuration saved'));
+    } catch (err) {
+      message.error(t('Failed to save ECharts configuration'));
+      console.error('[echarts-global-config] save failed', err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleReset = () => {
@@ -100,11 +113,13 @@ const EChartsAdminSettingsPage: React.FC = () => {
         </Form.Item>
         <Form.Item>
           <Space>
-            <Button type="primary" onClick={handleSave}>
+            <Button type="primary" onClick={handleSave} loading={saving}>
               {t('Save')}
             </Button>
             <Button onClick={handleReset}>{t('Reset')}</Button>
-            {savedAt ? <span style={{ color: '#52c41a' }}>{t('Saved')}</span> : null}
+            {savedAt ? (
+              <span style={{ color: '#52c41a' }}>{t('Saved')}</span>
+            ) : null}
           </Space>
         </Form.Item>
       </Form>

@@ -49,6 +49,18 @@ export class EChartsUserCenterItemModel extends UserCenterSelectItemModel {
 
     saveStoredEChartsConfig(next);
 
+    // 走服务端持久化（与 admin settings 页 / v1 同步）。失败仅降级为本地
+    // localStorage 已写、charts 下次刷新自然生效。
+    const { saveRemoteEChartsConfig } = await import('../echarts/echartsConfigStorage');
+    try {
+      const api = (this.context as { api?: unknown }).api;
+      if (api) {
+        await saveRemoteEChartsConfig(api as never, next);
+      }
+    } catch {
+      // server unreachable / ACL denied, 跨设备同步会延迟一次
+    }
+
     // 与 v1 行为一致：保存后刷新页面，使所有 <ECharts> 实例用新主题重渲
     // （本插件独立于 plugin-data-visualization，无法主动通知其组件）。
     window.location.reload();

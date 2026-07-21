@@ -10,35 +10,39 @@
 import { Button, Form, Input, Select, Space, message } from 'antd';
 import React, { useEffect, useState } from 'react';
 import { ECHARTS_THEME_OPTIONS } from '../echarts/echartsThemes';
-import { loadStoredEChartsConfig, saveStoredEChartsConfig } from '../echarts/echartsConfigStorage';
+import { useEChartsGlobalConfig, useSetEChartsGlobalConfig } from '../hooks';
 import { useT } from '../locale';
 
 /**
  * 插件设置中心里的「ECharts configuration」页面（v1）。
  *
  * 与个人中心 EChartsSettings 的区别：
- *   - 个人中心 EChartsSettings 是一个 SchemaSettingsSelectItem（下拉项），用户级个性化配置；
- *   - 本组件是一个**完整页面**，admin 视角下的平台级默认 ECharts 配置入口。
+ *   - 个人中心 EChartsSettings 是一个 SchemaSettingsSelectItem（下拉项）；
+ *   - 本组件是一个**完整页面**，admin 视角下的平台级 ECharts 配置入口。
  *
- * 持久化说明（2026-07-21 沿用 localStorage 兜底，详见 issue BAI-43）：
- *   - 当前写 localStorage（与个人中心共享同一 key），每个用户浏览器一份，**不是真正的平台级配置**。
- *   - 等用户拍板「持久化策略」（issue BAI-43 开工前澄清 Q1），再切到服务端 collection。
- *   - 一旦切到服务端，admin 配置应对所有用户生效；届时本组件的 save 逻辑需要改为调
- *     `app.api.request({ url: '/echartsGlobalConfig:update', ... })`，不再走 localStorage。
+ * 持久化（2026-07-21 用户拍板）：真值在服务端 themeConfig 表 uid='echarts-global-config'
+ * 那一行的 config JSON 字段；localStorage 是写穿缓存，charts 启动后从服务端拉一次再写
+ * localStorage，setter 写 localStorage + 异步写服务端。详见 hooks/useEChartsGlobalConfig.ts。
  */
 export const EChartsAdminSettings: React.FC = () => {
   const t = useT();
-  const [theme, setTheme] = useState<string>('');
-  const [optionJson, setOptionJson] = useState<string>('');
+  const config = useEChartsGlobalConfig();
+  const setConfig = useSetEChartsGlobalConfig();
+  const [theme, setTheme] = useState<string>(config.theme ?? '');
+  const [optionJson, setOptionJson] = useState<string>(
+    config.option ? JSON.stringify(config.option, null, 2) : '',
+  );
+  const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   useEffect(() => {
-    const config = loadStoredEChartsConfig();
-    setTheme(config?.theme ?? '');
-    setOptionJson(config?.option ? JSON.stringify(config.option, null, 2) : '');
-  }, []);
+    setTheme(config.theme ?? '');
+    setOptionJson(config.option ? JSON.stringify(config.option, null, 2) : '');
+    // 不依赖 savedAt —— 外部 config 变化（例如另一个 admin 改了）也应当同步进表单
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.theme, config.option ? JSON.stringify(config.option) : '']);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     let parsedOption: Record<string, unknown> | undefined;
     const trimmed = optionJson.trim();
     if (trimmed) {
@@ -55,12 +59,22 @@ export const EChartsAdminSettings: React.FC = () => {
         return;
       }
     }
-    saveStoredEChartsConfig({
-      theme: theme || undefined,
-      option: parsedOption,
-    });
-    setSavedAt(Date.now());
-    message.success(t('ECharts configuration saved'));
+    setSaving(true);
+    try {
+      await setConfig({
+        theme: theme || undefined,
+        option: parsedOption,
+      });
+      setSavedAt(Date.now());
+      message.success(t('ECharts configuration saved'));
+    } catch (err) {
+      // setConfig 内部已经把服务端写失败降级为 console.warn，所以理论上 catch 不会触发；
+      // 但如果未来接口契约变化，保留这条用户可见错误兜底。
+      message.error(t('Failed to save ECharts configuration'));
+      console.error('[echarts-global-config] save failed', err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleReset = () => {
@@ -104,7 +118,7 @@ export const EChartsAdminSettings: React.FC = () => {
         </Form.Item>
         <Form.Item>
           <Space>
-            <Button type="primary" onClick={handleSave}>
+            <Button type="primary" onClick={handleSave} loading={saving}>
               {t('Save')}
             </Button>
             <Button onClick={handleReset}>{t('Reset')}</Button>

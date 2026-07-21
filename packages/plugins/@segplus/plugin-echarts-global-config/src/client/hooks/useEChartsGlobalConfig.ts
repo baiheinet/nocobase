@@ -7,12 +7,17 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import mergeWith from 'lodash/mergeWith';
 import isPlainObject from 'lodash/isPlainObject';
 import type { EChartsOption, EChartsType } from 'echarts';
 import { ensureEChartsThemesRegistered } from '../echarts/echartsThemes';
-import { loadStoredEChartsConfig, saveStoredEChartsConfig } from '../echarts/echartsConfigStorage';
+import {
+  loadRemoteEChartsConfig,
+  loadStoredEChartsConfig,
+  saveRemoteEChartsConfig,
+  saveStoredEChartsConfig,
+} from '../echarts/echartsConfigStorage';
 
 export interface EChartsGlobalConfig {
   /**
@@ -54,9 +59,18 @@ function dispatchConfigChange(): void {
   }
 }
 
+/**
+ * 模块级 app 引用，由 plugin load() 时注入。storage 层与 hooks 都不应该
+ * 反向依赖 @nocobase/client / client-v2，所以通过这个单例传 api。
+ */
+let _app: { api: unknown } | undefined;
+export function setEChartsConfigApp(app: { api: unknown }): void {
+  _app = app;
+}
+
 interface EChartsConfigContextValue {
   config: EChartsGlobalConfig;
-  setConfig: (next: EChartsGlobalConfig) => void;
+  setConfig: (next: EChartsGlobalConfig) => Promise<void>;
 }
 
 const EChartsConfigContext = createContext<EChartsConfigContextValue | undefined>(undefined);
@@ -69,9 +83,14 @@ export interface EChartsConfigProviderProps {
 /**
  * 运行时全局 ECharts 配置 Provider。
  *
- * 有状态（uncontrolled）：内部用 useState 持有 config，初始值从 localStorage 读取
- * （用户级个性化配置，真值即 localStorage）。暴露 setConfig 供 settings 页写入，
- * setConfig 会同步写回 localStorage 并更新内部 state，使全树 <ECharts> 立即重渲染。
+ * 初始化顺序：
+ *   1. useState lazy init：从 localStorage 读（同步、零延迟、首屏立刻有值）；
+ *   2. mount 后 useEffect 异步从服务端拉一次 —— 拉到后写 localStorage + 派发
+ *      ECHARTS_CONFIG_CHANGE_EVENT，所有 <ECharts> 自动重渲。
+ *   3. setConfig：写 localStorage（同步）→ 派发事件（同步）→ 异步写服务端。
+ *      异步服务端写失败仅 console.warn，不向用户弹错（personal center 下拉项
+ *      这种快速编辑不该因为网络抖动报错）；admin settings 页会在自己的
+ *      handleSave 里 await 并 surface 错误。
  *
  * 用法（应用根部注入一次；plugin client 已通过 app.use 挂载）：
  * ```tsx
@@ -83,10 +102,41 @@ export interface EChartsConfigProviderProps {
 export const EChartsConfigProvider: React.FC<EChartsConfigProviderProps> = ({ children }) => {
   const [config, setConfigState] = useState<EChartsGlobalConfig>(() => loadStoredEChartsConfig() ?? {});
 
-  const setConfig = useCallback((next: EChartsGlobalConfig) => {
+  useEffect(() => {
+    if (!_app?.api) return;
+    let cancelled = false;
+    loadRemoteEChartsConfig(_app.api as never)
+      .then((remote) => {
+        if (cancelled) return;
+        if (!remote) return;
+        // 跟当前 localStorage 比一下，避免用旧缓存覆盖新 localStorage 后又把它写回服务端
+        const current = loadStoredEChartsConfig();
+        if (JSON.stringify(current ?? {}) === JSON.stringify(remote)) return;
+        saveStoredEChartsConfig(remote);
+        setConfigState(remote);
+        dispatchConfigChange();
+      })
+      .catch(() => {
+        // server unreachable / ACL denied, use localStorage
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const setConfig = useCallback(async (next: EChartsGlobalConfig) => {
     setConfigState(next);
     saveStoredEChartsConfig(next);
     dispatchConfigChange();
+    if (_app?.api) {
+      try {
+        await saveRemoteEChartsConfig(_app.api as never, next);
+      } catch (err) {
+        // personal center 快速切换主题的场景：localStorage 已落、charts 已重渲，
+        // 服务端没写进去仅是「跨设备同步会延迟一次」，不该阻塞 UI。
+        console.warn('[echarts-global-config] failed to sync to server', err);
+      }
+    }
   }, []);
 
   const value = useMemo<EChartsConfigContextValue>(() => ({ config, setConfig }), [config, setConfig]);
@@ -101,24 +151,24 @@ export function useEChartsGlobalConfig(): EChartsGlobalConfig {
 
 /**
  * 获取修改全局配置的 setter（settings 页用）。
- * 有 Provider 时用 Provider 的 setConfig（同步 context）；无 Provider 时退化为
- * 直接写 localStorage + 派发变更事件，保证 charts 仍能即时响应主题切换。
+ * 有 Provider 时用 Provider 的 setConfig（同步 context + 异步服务端）；无 Provider
+ * 时退化为同步写 localStorage + 派发事件，charts 仍能即时响应（仅失去跨设备同步）。
  */
-export function useSetEChartsGlobalConfig(): (next: EChartsGlobalConfig) => void {
+export function useSetEChartsGlobalConfig(): (next: EChartsGlobalConfig) => Promise<void> {
   const ctx = useContext(EChartsConfigContext);
-  return (
-    ctx?.setConfig ??
-    ((next: EChartsGlobalConfig) => {
-      saveStoredEChartsConfig(next);
-      dispatchConfigChange();
-    })
-  );
+  if (ctx) {
+    return ctx.setConfig;
+  }
+  return async (next: EChartsGlobalConfig) => {
+    saveStoredEChartsConfig(next);
+    dispatchConfigChange();
+  };
 }
 
 /**
  * 推导最终 echarts 主题名，优先级：
  *   1. 本地 theme prop 显式传入 → 最高
- *   2. 持久化主题（localStorage，用户级个性化配置的真值来源）→ 其次
+ *   2. 持久化主题（localStorage 用户级缓存，真值在服务端）→ 其次
  *
  * Light / Dark 不在此处理：交给 NocoBase 全局 Theme 设置，本插件只承载具名 echarts 主题。
  * 主题直接读 localStorage 而非 React context —— 这样无论 <ECharts> 与 settings 页

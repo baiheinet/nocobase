@@ -10,16 +10,16 @@
 import type { EChartsGlobalConfig } from '../hooks/useEChartsGlobalConfig';
 
 /**
- * ECharts 全局配置的持久化。
+ * v2 客户端的 ECharts global config 持久化层。
  *
- * 这是**用户级个性化配置**（不是平台级 admin 设置），真值即 localStorage：
- *   - 每个用户在自己浏览器里保存，互不共享；
- *   - 保存后刷新仍在，settings 页通过 useSetEChartsGlobalConfig() 即时刷新图表。
- *
- * 仅持久化可序列化字段（theme / option），onRefReady 这类函数不落盘。
+ * 与 src/client/echarts/echartsConfigStorage.ts 行为一致 —— v1/v2 客户端分别
+ * 维护一份以避免互相 import（v2 不可 import v1 @nocobase/client）。
+ * 字段 / 策略完全相同，详见那份文件头注释。
  */
 
 const STORAGE_KEY = 'nocobase:plugin-echarts-global-config:echarts-global-config';
+
+export const ECHARTS_GLOBAL_CONFIG_UID = 'echarts-global-config';
 
 type PersistedConfig = Pick<EChartsGlobalConfig, 'theme' | 'option'>;
 
@@ -38,7 +38,6 @@ export function loadStoredEChartsConfig(): PersistedConfig | undefined {
     }
     return undefined;
   } catch {
-    // 损坏的 JSON / 隐私模式禁读等，静默降级为无持久化
     return undefined;
   }
 }
@@ -49,4 +48,61 @@ export function saveStoredEChartsConfig(config: EChartsGlobalConfig): void {
   }
   const persisted: PersistedConfig = { theme: config.theme, option: config.option };
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+}
+
+interface ApiLike {
+  request: (options: {
+    url: string;
+    method?: string;
+    params?: Record<string, unknown>;
+    data?: unknown;
+  }) => Promise<{ data?: any[] }>;
+}
+
+export async function loadRemoteEChartsConfig(api: ApiLike): Promise<PersistedConfig | undefined> {
+  try {
+    const res = await api.request({
+      url: 'themeConfig:list',
+      params: { filter: { uid: ECHARTS_GLOBAL_CONFIG_UID }, pageSize: 1 },
+    });
+    const row = res?.data?.[0];
+    if (!row) return undefined;
+    const cfg = row.config;
+    if (cfg && typeof cfg === 'object') {
+      return cfg as PersistedConfig;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function saveRemoteEChartsConfig(api: ApiLike, config: EChartsGlobalConfig): Promise<void> {
+  const persisted: PersistedConfig = { theme: config.theme, option: config.option };
+  const payload = {
+    uid: ECHARTS_GLOBAL_CONFIG_UID,
+    isBuiltIn: false,
+    optional: true,
+    default: false,
+    config: persisted,
+  };
+
+  const list = await api.request({
+    url: 'themeConfig:list',
+    params: { filter: { uid: ECHARTS_GLOBAL_CONFIG_UID }, pageSize: 1 },
+  });
+  const existing = list?.data?.[0];
+  if (existing?.id != null) {
+    await api.request({
+      url: `themeConfig:update/${existing.id}`,
+      method: 'post',
+      data: payload,
+    });
+    return;
+  }
+  await api.request({
+    url: 'themeConfig:create',
+    method: 'post',
+    data: payload,
+  });
 }
