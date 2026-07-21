@@ -9,8 +9,6 @@
 
 import { Application, Plugin } from '@nocobase/client-v2';
 
-import { EChartsUserCenterItemModel } from './models/EChartsUserCenterItemModel';
-
 export class PluginEchartsGlobalConfigClient extends Plugin<any, Application> {
   async load() {
     // 个人中心（右上角头像 → 设置）注册 ECharts 个性化配置下拉项。
@@ -20,6 +18,7 @@ export class PluginEchartsGlobalConfigClient extends Plugin<any, Application> {
     this.flowEngine.registerModelLoaders({
       EChartsUserCenterItemModel: {
         extends: 'UserCenterItemModel',
+        // 动态导入，首次真正用到这个 model 时才会加载对应模块
         loader: () => {
           console.log('[echarts-global-config] loader invoked');
           return import('./models/EChartsUserCenterItemModel');
