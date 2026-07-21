@@ -9,16 +9,20 @@
 
 import { UserCenterSelectItemModel } from '@nocobase/client-v2';
 import { ECHARTS_THEME_OPTIONS } from '../echarts/echartsThemeOptions';
-import { loadStoredEChartsConfig, saveStoredEChartsConfig } from '../echarts/echartsConfigStorage';
+import {
+  loadRemoteEChartsThemes,
+  loadStoredUserTheme,
+  saveStoredUserTheme,
+} from '../echarts/echartsConfigStorage';
 import { translateEchartsGlobalConfig } from '../locale';
 
 /**
  * v2 user-center（右上角头像 → 设置）里的「ECharts theme」下拉项。
  *
- * v1 用 `this.app.addUserCenterSettingsItem({ Component: ... })`（@nocobase/client 的
- * Application API）挂一个页面；v2 没有这个 app API，改为继承 client-v2 的
- * `UserCenterSelectItemModel` 并通过 `flowEngine.registerModelLoaders` 注册，
- * 由核心 UserCenterTopbarActionModel 自动发现并渲染。
+ * 2026-07-21 第二次拍板后模型简化:
+ *   - 主题定义在服务端,uid 形如 'echarts-vintage';
+ *   - 用户选的主题只存 localStorage(per-user override,DB default 是平台级);
+ *   - 不再调服务端写;admin 在 /admin/settings/ 里改 DB default。
  */
 export class EChartsUserCenterItemModel extends UserCenterSelectItemModel {
   static itemId = 'echarts-global-config';
@@ -28,38 +32,43 @@ export class EChartsUserCenterItemModel extends UserCenterSelectItemModel {
   label = 'ECharts theme';
 
   async prepare() {
-    const config = loadStoredEChartsConfig() ?? {};
+    const api = (this.context as { api?: unknown }).api;
+    let dbOptions: { uid: string; label: string }[] = [];
+    if (api) {
+      const themes = await loadRemoteEChartsThemes(api as never);
+      dbOptions = themes.map((t) => {
+        // 把 'echarts-vintage' 拼成 'Vintage'(i18n key)
+        const stripped = t.uid.replace(/^echarts-/, '');
+        const labelKey = stripped.charAt(0).toUpperCase() + stripped.slice(1);
+        return {
+          uid: t.uid,
+          label: translateEchartsGlobalConfig(this.context, labelKey),
+        };
+      });
+    }
+    // 顶部加一个「Use default」空选项,清掉 userTheme 让 <ECharts> 用 DB default
+    const options: { label: string; value: string }[] = [
+      { label: translateEchartsGlobalConfig(this.context, 'Use default'), value: '' },
+      ...(dbOptions.length > 0
+        ? dbOptions
+        : ECHARTS_THEME_OPTIONS.map((o) => ({ label: o.label, value: o.uid }))
+      ).map((o) => ({
+        label: o.label,
+        value: o.uid,
+      })),
+    ];
 
     this.label = translateEchartsGlobalConfig(this.context, 'ECharts theme');
-    this.options = ECHARTS_THEME_OPTIONS.map((o) => ({
-      label: translateEchartsGlobalConfig(this.context, o.label),
-      value: o.value,
-    }));
-    this.value = config.theme ?? '';
+    this.options = options;
+    this.value = loadStoredUserTheme() ?? '';
   }
 
   async onChange(value: string) {
-    const config = loadStoredEChartsConfig() ?? {};
-    const next = { ...config, theme: value || undefined };
+    const previous = loadStoredUserTheme();
+    const next = value || undefined;
+    if (next === previous) return;
 
-    // 选回当前已选值时无需刷新
-    if (next.theme === config.theme) {
-      return;
-    }
-
-    saveStoredEChartsConfig(next);
-
-    // 走服务端持久化（与 admin settings 页 / v1 同步）。失败仅降级为本地
-    // localStorage 已写、charts 下次刷新自然生效。
-    const { saveRemoteEChartsConfig } = await import('../echarts/echartsConfigStorage');
-    try {
-      const api = (this.context as { api?: unknown }).api;
-      if (api) {
-        await saveRemoteEChartsConfig(api as never, next);
-      }
-    } catch {
-      // server unreachable / ACL denied, 跨设备同步会延迟一次
-    }
+    saveStoredUserTheme(next);
 
     // 与 v1 行为一致：保存后刷新页面，使所有 <ECharts> 实例用新主题重渲
     // （本插件独立于 plugin-data-visualization，无法主动通知其组件）。

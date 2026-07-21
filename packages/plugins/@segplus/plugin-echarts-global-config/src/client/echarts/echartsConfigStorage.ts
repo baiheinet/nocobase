@@ -7,42 +7,66 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
-import type { EChartsGlobalConfig } from '../hooks/useEChartsGlobalConfig';
+import type { EChartsOption } from 'echarts';
 
 /**
- * ECharts global config 持久化。
+ * ECharts 持久化层（v1 / client）。
  *
- * 存储策略（v2 起，2026-07-21 用户拍板）：
- *   - 真值在服务端（@nocobase/plugin-theme-editor 的 themeConfig collection，
- *     uid='echarts-global-config' 那行的 config JSON 字段）；
- *   - localStorage 是**写穿缓存**：每次写入都同步落 localStorage 并派发
- *     ECHARTS_CONFIG_CHANGE_EVENT，<ECharts> 监听事件即时重渲；
- *   - 服务端是跨用户/跨设备的真值来源：插件 client load() 时从服务端拉一次
- *     写入 localStorage，setter 写 localStorage 后再异步写服务端。
- *   - 这样同一浏览器会话内 <ECharts> 永远拿到最新值（localStorage 同步读），
- *     其他浏览器/用户在刷新后从服务端拉到新值。
+ * 2026-07-21 用户拍板,第二次修正:
+ *   - 主题定义在服务端 `themeConfig` collection 里,**每个主题一行**,uid 形如
+ *     'echarts-vintage' / 'echarts-macarons',config 字段就是 echarts.registerTheme()
+ *     接受的对象。原来 `uid='echarts-global-config'` 单行存 {theme, option} 的策略
+ *     弃用,见 issue BAI-43 评论。
+ *   - **全局默认主题**靠行上的 `default` 标志位标记(只一个为 true),
+ *     由 admin 在 /admin/settings/ → ECharts configuration 页面里改。
+ *   - **用户级 option 覆盖**(per-instance ECharts option 合并)只在 localStorage,
+ *     不上服务端 —— 跟"平台级主题"语义不同,平台级是「我设的默认值」,option 是
+ *     「我给所有 chart 套的样式覆盖」,后者跟个人偏好更近。
  *
- * 仅持久化可序列化字段（theme / option），onRefReady 这类函数不落盘。
+ * localStorage key 只剩一个:用户级 option 覆盖。theme 的"用户选了哪个"也只在
+ * localStorage(另一个 key),它与 DB default 的关系是:有用户选就用用户的,否则用
+ * DB default。
  */
 
-const STORAGE_KEY = 'nocobase:plugin-echarts-global-config:echarts-global-config';
+import type { EChartsTheme } from './echartsThemes';
 
-export const ECHARTS_GLOBAL_CONFIG_UID = 'echarts-global-config';
+const STORAGE_OPTION_KEY = 'nocobase:plugin-echarts-global-config:option';
+const STORAGE_THEME_KEY = 'nocobase:plugin-echarts-global-config:user-theme';
 
-type PersistedConfig = Pick<EChartsGlobalConfig, 'theme' | 'option'>;
+type PersistedOption = EChartsOption | undefined;
+type PersistedUserTheme = string | undefined;
 
-export function loadStoredEChartsConfig(): PersistedConfig | undefined {
-  if (typeof window === 'undefined' || !window.localStorage) {
+export function loadStoredUserTheme(): PersistedUserTheme {
+  if (typeof window === 'undefined' || !window.localStorage) return undefined;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_THEME_KEY);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw);
+    return typeof parsed === 'string' ? parsed : undefined;
+  } catch {
     return undefined;
   }
+}
+
+export function saveStoredUserTheme(themeUid: string | undefined): void {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    throw new Error('localStorage is not available');
+  }
+  if (themeUid === undefined) {
+    window.localStorage.removeItem(STORAGE_THEME_KEY);
+    return;
+  }
+  window.localStorage.setItem(STORAGE_THEME_KEY, JSON.stringify(themeUid));
+}
+
+export function loadStoredOption(): PersistedOption {
+  if (typeof window === 'undefined' || !window.localStorage) return undefined;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return undefined;
-    }
+    const raw = window.localStorage.getItem(STORAGE_OPTION_KEY);
+    if (!raw) return undefined;
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object') {
-      return parsed as PersistedConfig;
+      return parsed as EChartsOption;
     }
     return undefined;
   } catch {
@@ -50,18 +74,20 @@ export function loadStoredEChartsConfig(): PersistedConfig | undefined {
   }
 }
 
-export function saveStoredEChartsConfig(config: EChartsGlobalConfig): void {
+export function saveStoredOption(option: EChartsOption | undefined): void {
   if (typeof window === 'undefined' || !window.localStorage) {
     throw new Error('localStorage is not available');
   }
-  const persisted: PersistedConfig = { theme: config.theme, option: config.option };
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+  if (option === undefined) {
+    window.localStorage.removeItem(STORAGE_OPTION_KEY);
+    return;
+  }
+  window.localStorage.setItem(STORAGE_OPTION_KEY, JSON.stringify(option));
 }
 
 /**
- * 极简的 api 客户端类型（只取我们用到的两个方法）。
- * 完整类型在 @nocobase/client / @nocobase/client-v2 里，但 storage 不该
- * 反向依赖任何一个 client 包。
+ * 极简的 api 客户端类型(只取我们用到的几个方法)。完整类型在 @nocobase/client /
+ * client-v2 里,但 storage 不该反向依赖任何一个 client 包。
  */
 interface ApiLike {
   request: (options: {
@@ -73,65 +99,51 @@ interface ApiLike {
 }
 
 /**
- * 从服务端拉 ECharts global config（themeConfig 表 uid=ECHARTS_GLOBAL_CONFIG_UID 那行）。
+ * 从服务端拉所有 ECharts 主题(uid 前缀 'echarts-')。
  *
- * 返回该行的 `config` 字段（PersistedConfig），没找到或无权读时返回 undefined。
- * 网络/解析错误一律静默降级 —— storage 层的契约是「尽力而为」，不让 storage 抛
- * 异常把上层 render 弄炸。
+ * 失败一律静默降级 —— 让上层 render 拿到空数组 + fallback ECHARTS_THEME_OPTIONS 即可。
  */
-export async function loadRemoteEChartsConfig(api: ApiLike): Promise<PersistedConfig | undefined> {
+export async function loadRemoteEChartsThemes(api: ApiLike): Promise<EChartsTheme[]> {
   try {
     const res = await api.request({
       url: 'themeConfig:list',
-      params: { filter: { uid: ECHARTS_GLOBAL_CONFIG_UID }, pageSize: 1 },
+      params: { filter: { uid: { $startsWith: 'echarts-' } }, pageSize: 100 },
     });
-    const row = res?.data?.[0];
-    if (!row) return undefined;
-    const cfg = row.config;
-    if (cfg && typeof cfg === 'object') {
-      return cfg as PersistedConfig;
-    }
-    return undefined;
+    const rows = res?.data ?? [];
+    return rows
+      .filter((r) => r && typeof r.uid === 'string' && r.config && typeof r.config === 'object')
+      .map((r) => ({
+        id: r.id,
+        uid: r.uid,
+        isBuiltIn: !!r.isBuiltIn,
+        optional: !!r.optional,
+        default: !!r.default,
+        config: r.config,
+      }));
   } catch {
-    return undefined;
+    return [];
   }
 }
 
 /**
- * 把 ECharts global config 写到服务端（themeConfig 表对应行）。
+ * 把指定 theme 标记为 default(其他 echarts-* 行清掉 default)。
  *
- * 行为：
- *   - 行已存在（按 uid 查到）→ update；
- *   - 行不存在 → create（isBuiltIn=false, optional=true, default=false）。
- *
- * 错误一律抛回上层，让 setter 决定如何处理（admin settings 页要 surface 错误给用户）。
+ * 行为:
+ *   - 拉所有 echarts-* 行(用 loadRemoteEChartsThemes 同款 query,小数据量够用);
+ *   - 对每一行:target=true,其余=false,逐行 update(只发必要字段);
+ *   - update URL 走 `themeConfig:update/<id>`(用 DB 主键,不用 uid)。
+ *   - 失败抛回上层,让 admin settings 页 surface。
  */
-export async function saveRemoteEChartsConfig(api: ApiLike, config: EChartsGlobalConfig): Promise<void> {
-  const persisted: PersistedConfig = { theme: config.theme, option: config.option };
-  const payload = {
-    uid: ECHARTS_GLOBAL_CONFIG_UID,
-    isBuiltIn: false,
-    optional: true,
-    default: false,
-    config: persisted,
-  };
-
-  const list = await api.request({
-    url: 'themeConfig:list',
-    params: { filter: { uid: ECHARTS_GLOBAL_CONFIG_UID }, pageSize: 1 },
-  });
-  const existing = list?.data?.[0];
-  if (existing?.id != null) {
+export async function setRemoteEChartsDefaultTheme(api: ApiLike, targetUid: string): Promise<void> {
+  const themes = await loadRemoteEChartsThemes(api);
+  for (const t of themes) {
+    const nextDefault = t.uid === targetUid;
+    if (t.default === nextDefault) continue;
+    if (t.id == null) continue;
     await api.request({
-      url: `themeConfig:update/${existing.id}`,
+      url: `themeConfig:update/${t.id}`,
       method: 'post',
-      data: payload,
+      data: { default: nextDefault },
     });
-    return;
   }
-  await api.request({
-    url: 'themeConfig:create',
-    method: 'post',
-    data: payload,
-  });
 }

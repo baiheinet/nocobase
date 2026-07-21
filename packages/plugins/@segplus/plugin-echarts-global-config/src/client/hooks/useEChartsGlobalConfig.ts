@@ -10,47 +10,43 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import mergeWith from 'lodash/mergeWith';
 import isPlainObject from 'lodash/isPlainObject';
-import type { EChartsOption, EChartsType } from 'echarts';
-import { ensureEChartsThemesRegistered } from '../echarts/echartsThemes';
+import type { EChartsOption } from 'echarts';
+import { registerEChartsTheme, type EChartsTheme } from '../echarts/echartsThemes';
 import {
-  loadRemoteEChartsConfig,
-  loadStoredEChartsConfig,
-  saveRemoteEChartsConfig,
-  saveStoredEChartsConfig,
+  loadRemoteEChartsThemes,
+  loadStoredOption,
+  loadStoredUserTheme,
+  saveRemoteEChartsDefaultTheme,
+  saveStoredOption,
+  saveStoredUserTheme,
 } from '../echarts/echartsConfigStorage';
 
+export type { EChartsTheme } from '../echarts/echartsThemes';
+export { ECHARTS_THEME_OPTIONS } from '../echarts/echartsThemes';
+
+/**
+ * ECharts theme 的运行时引用(给 <ECharts> 读 useEChartsTheme() 用)。
+ * 不是 EChartsOption 的一部分 —— 见 onRefReady 字段(原本是给运行时回调用,
+ * 现在保留字段名以减小下游 import 改动)。
+ */
 export interface EChartsGlobalConfig {
   /**
-   * 全局 ECharts option 配置。
-   * 与每个 <ECharts> 的本地 option 做深度合并，全局作为底，本地覆盖。
-   * 合并规则（见 mergeOption）：
-   *   - 纯对象：递归深合并
-   *   - 数组：整组替换（color / series / dataset.source 等不被拼接）
-   *   - 原始值：本地覆盖全局
+   * 用户级 option 覆盖:与每个 <ECharts> 的本地 option 做深度合并,全局作为底,
+   * 本地覆盖。合并规则(见 mergeOption):
+   *   - 纯对象:递归深合并
+   *   - 数组:整组替换(color / series / dataset.source 等不被拼接)
+   *   - 原始值:本地覆盖全局
    */
   option?: EChartsOption;
   /**
-   * 全局默认 echarts 主题名。
-   * 当本地未传 theme 时回退到该值（通常为 undefined = echarts 默认浅色）。
-   *
-   * 注：Light / Dark 由 NocoBase 全局 Theme 设置处理，本插件不管理；
-   *     这里只承载 Vintage / Macarons 等真正具名、需要注册的 echarts 主题。
+   * 全局 onRefReady 回调。在每个 ECharts 实例初始化后调用,先于本地 onRefReady。
+   * 不落盘。
    */
-  theme?: string;
-  /**
-   * 全局 onRefReady 回调。
-   * 在每个 ECharts 实例初始化后调用，先于本地 onRefReady 执行。
-   */
-  onRefReady?: (chart: EChartsType) => void;
+  onRefReady?: (chart: unknown) => void;
 }
 
-// dark / vintage / macarons 等具名主题必须在任何 <ECharts> init 之前注册，
-// 否则 echarts.init(el, name) 会静默回退浅色。模块级执行一次。
-ensureEChartsThemesRegistered();
-
-// 主题变更事件：setConfig 写入 localStorage 后派发，<ECharts> 监听后强制重渲。
-// 用 window 事件而非 React context 传递变更信号 —— 这样即使 <ECharts> 与 settings 页
-// 不在同一 context 实例（v1/v2 边界、懒加载 chunk 导致 context 分裂），主题也能即时生效。
+// 主题变更 / 主题列表拉取 / option 变更统一走这个事件,
+// 让跨 context 实例也能即时响应(参见 v2 同款 hook 文件头注释)。
 export const ECHARTS_CONFIG_CHANGE_EVENT = 'echarts-global-config-change';
 
 function dispatchConfigChange(): void {
@@ -60,8 +56,8 @@ function dispatchConfigChange(): void {
 }
 
 /**
- * 模块级 app 引用，由 plugin load() 时注入。storage 层与 hooks 都不应该
- * 反向依赖 @nocobase/client / client-v2，所以通过这个单例传 api。
+ * 模块级 app 引用,由 plugin load() 时注入。storage 与 hooks 都不该反向依赖
+ * @nocobase/client / client-v2,所以通过单例传 api。
  */
 let _app: { api: unknown } | undefined;
 export function setEChartsConfigApp(app: { api: unknown }): void {
@@ -69,8 +65,22 @@ export function setEChartsConfigApp(app: { api: unknown }): void {
 }
 
 interface EChartsConfigContextValue {
-  config: EChartsGlobalConfig;
-  setConfig: (next: EChartsGlobalConfig) => Promise<void>;
+  /** 主题列表(从 DB 拉到的 echarts-* 行,DB 失败时为空) */
+  themes: EChartsTheme[];
+  /** DB 标记的全局默认主题 uid(可能为 null) */
+  defaultThemeUid: string | null;
+  /** 用户当前选的主题(用户没选时 = defaultThemeUid) */
+  currentThemeUid: string | null;
+  /** 用户级 option 覆盖(localStorage) */
+  option: EChartsOption | undefined;
+  /** 拉一次 DB(同时 register echarts) */
+  reload: () => Promise<void>;
+  /** 把指定 theme 设为 DB default(其他清 default) */
+  setDefaultTheme: (uid: string) => Promise<void>;
+  /** 设置用户选的主题(localStorage;undefined 表示清空,fallback 到 DB default) */
+  setUserTheme: (uid: string | undefined) => void;
+  /** 设置用户级 option(localStorage) */
+  setOption: (opt: EChartsOption | undefined) => void;
 }
 
 const EChartsConfigContext = createContext<EChartsConfigContextValue | undefined>(undefined);
@@ -80,117 +90,140 @@ export interface EChartsConfigProviderProps {
   children: React.ReactNode;
 }
 
+function deriveCurrentTheme(userTheme: string | undefined, defaultThemeUid: string | null): string | null {
+  if (userTheme) return userTheme;
+  return defaultThemeUid;
+}
+
 /**
- * 运行时全局 ECharts 配置 Provider。
+ * v1 运行时 ECharts 配置 Provider。
  *
- * 初始化顺序：
- *   1. useState lazy init：从 localStorage 读（同步、零延迟、首屏立刻有值）；
- *   2. mount 后 useEffect 异步从服务端拉一次 —— 拉到后写 localStorage + 派发
- *      ECHARTS_CONFIG_CHANGE_EVENT，所有 <ECharts> 自动重渲。
- *   3. setConfig：写 localStorage（同步）→ 派发事件（同步）→ 异步写服务端。
- *      异步服务端写失败仅 console.warn，不向用户弹错（personal center 下拉项
- *      这种快速编辑不该因为网络抖动报错）；admin settings 页会在自己的
- *      handleSave 里 await 并 surface 错误。
+ * 状态:
+ *   - themes: 从 DB 拉到的 echarts-* 主题行(同时 register 进 echarts);
+ *   - defaultThemeUid: DB 标记的 default 主题 uid;
+ *   - userTheme(localStorage): 用户个人选的主题,override default;
+ *   - option(localStorage): 用户级 option 覆盖;
  *
- * 用法（应用根部注入一次；plugin client 已通过 app.use 挂载）：
- * ```tsx
- * <EChartsConfigProvider>
- *   <App />
- * </EChartsConfigProvider>
- * ```
+ * 事件:所有 setter 派发 ECHARTS_CONFIG_CHANGE_EVENT,跨 context / 跨 lazy chunk
+ * 也能即时同步。
  */
 export const EChartsConfigProvider: React.FC<EChartsConfigProviderProps> = ({ children }) => {
-  const [config, setConfigState] = useState<EChartsGlobalConfig>(() => loadStoredEChartsConfig() ?? {});
+  const [themes, setThemes] = useState<EChartsTheme[]>([]);
+  const [userTheme, setUserThemeState] = useState<string | undefined>(() => loadStoredUserTheme());
+  const [option, setOptionState] = useState<EChartsOption | undefined>(() => loadStoredOption());
 
-  useEffect(() => {
+  const reload = useCallback(async () => {
     if (!_app?.api) return;
+    const remote = await loadRemoteEChartsThemes(_app.api as never);
+    // 注册到 echarts(vintage / macarons 行被消费后,任何 echarts.init(el, uid) 都用得上)
+    remote.forEach(registerEChartsTheme);
+    setThemes(remote);
+    dispatchConfigChange();
+  }, []);
+
+  // 首次 mount 拉一次 DB
+  useEffect(() => {
     let cancelled = false;
-    loadRemoteEChartsConfig(_app.api as never)
-      .then((remote) => {
+    reload()
+      .then(() => {
         if (cancelled) return;
-        if (!remote) return;
-        // 跟当前 localStorage 比一下，避免用旧缓存覆盖新 localStorage 后又把它写回服务端
-        const current = loadStoredEChartsConfig();
-        if (JSON.stringify(current ?? {}) === JSON.stringify(remote)) return;
-        saveStoredEChartsConfig(remote);
-        setConfigState(remote);
-        dispatchConfigChange();
       })
       .catch(() => {
-        // server unreachable / ACL denied, use localStorage
+        // 静默降级 —— render 拿到空 themes 即可
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reload]);
 
-  const setConfig = useCallback(async (next: EChartsGlobalConfig) => {
-    setConfigState(next);
-    saveStoredEChartsConfig(next);
+  const defaultThemeUid = useMemo(
+    () => themes.find((t) => t.default)?.uid ?? null,
+    [themes],
+  );
+
+  const setDefaultTheme = useCallback(async (uid: string) => {
+    if (!_app?.api) return;
+    await setRemoteEChartsDefaultTheme(_app.api as never, uid);
+    await reload();
+  }, [reload]);
+
+  const setUserTheme = useCallback((uid: string | undefined) => {
+    setUserThemeState(uid);
+    saveStoredUserTheme(uid);
     dispatchConfigChange();
-    if (_app?.api) {
-      try {
-        await saveRemoteEChartsConfig(_app.api as never, next);
-      } catch (err) {
-        // personal center 快速切换主题的场景：localStorage 已落、charts 已重渲，
-        // 服务端没写进去仅是「跨设备同步会延迟一次」，不该阻塞 UI。
-        console.warn('[echarts-global-config] failed to sync to server', err);
-      }
-    }
   }, []);
 
-  const value = useMemo<EChartsConfigContextValue>(() => ({ config, setConfig }), [config, setConfig]);
+  const setOption = useCallback((opt: EChartsOption | undefined) => {
+    setOptionState(opt);
+    saveStoredOption(opt);
+    dispatchConfigChange();
+  }, []);
+
+  const currentThemeUid = deriveCurrentTheme(userTheme, defaultThemeUid);
+
+  const value = useMemo<EChartsConfigContextValue>(
+    () => ({
+      themes,
+      defaultThemeUid,
+      currentThemeUid,
+      option,
+      reload,
+      setDefaultTheme,
+      setUserTheme,
+      setOption,
+    }),
+    [themes, defaultThemeUid, currentThemeUid, option, reload, setDefaultTheme, setUserTheme, setOption],
+  );
 
   return React.createElement(EChartsConfigContext.Provider, { value }, children);
 };
 
-/** 读取当前全局 ECharts 配置（无 Provider 时返回空对象，向后兼容）。 */
-export function useEChartsGlobalConfig(): EChartsGlobalConfig {
-  return useContext(EChartsConfigContext)?.config ?? {};
-}
-
-/**
- * 获取修改全局配置的 setter（settings 页用）。
- * 有 Provider 时用 Provider 的 setConfig（同步 context + 异步服务端）；无 Provider
- * 时退化为同步写 localStorage + 派发事件，charts 仍能即时响应（仅失去跨设备同步）。
- */
-export function useSetEChartsGlobalConfig(): (next: EChartsGlobalConfig) => Promise<void> {
+/** 读取完整配置(无 Provider 时返回空对象 + null,向后兼容)。 */
+export function useEChartsGlobalConfig(): EChartsConfigContextValue {
   const ctx = useContext(EChartsConfigContext);
-  if (ctx) {
-    return ctx.setConfig;
-  }
-  return async (next: EChartsGlobalConfig) => {
-    saveStoredEChartsConfig(next);
-    dispatchConfigChange();
-  };
+  return (
+    ctx ?? {
+      themes: [],
+      defaultThemeUid: null,
+      currentThemeUid: null,
+      option: undefined,
+      reload: async () => undefined,
+      setDefaultTheme: async () => undefined,
+      setUserTheme: () => undefined,
+      setOption: () => undefined,
+    }
+  );
 }
 
 /**
- * 推导最终 echarts 主题名，优先级：
- *   1. 本地 theme prop 显式传入 → 最高
- *   2. 持久化主题（localStorage 用户级缓存，真值在服务端）→ 其次
+ * 给 <ECharts> 用 —— 推导最终 echarts 主题名,优先级:
+ *   1. 本地 themeProp 显式传入 → 最高
+ *   2. 用户在 personal center 选的主题(localStorage) → 其次
+ *   3. admin 设的 DB default → 最后
+ *   4. undefined(用 echarts 默认浅色)
  *
- * Light / Dark 不在此处理：交给 NocoBase 全局 Theme 设置，本插件只承载具名 echarts 主题。
- * 主题直接读 localStorage 而非 React context —— 这样无论 <ECharts> 与 settings 页
- * 是否共享同一 context 实例，切换主题后 charts 都能拿到最新值。
- * 用 ?? 而非 ||：theme='' 表示「显式清空全局主题」（echarts 对 '' 等同无主题，不报错），
- * 不应被 falsy 回退吞掉；想继承全局就传 undefined。
+ * 直接读 localStorage + 当前 Provider state(无 Provider 时仅 localStorage + 静态
+ * fallback),保证 <ECharts> 永远拿到最新值,不依赖 context 边界。
  */
 export function useEChartsTheme(themeProp?: string): string | undefined {
-  const stored = loadStoredEChartsConfig();
-  return themeProp ?? stored?.theme;
+  const ctx = useContext(EChartsConfigContext);
+  const stored = loadStoredUserTheme();
+  if (themeProp) return themeProp;
+  if (stored) return stored;
+  if (ctx?.defaultThemeUid) return ctx.defaultThemeUid;
+  return undefined;
 }
 
 /**
  * 深度合并 ECharts option。
  *
- * 合并规则：
- *   - 纯对象：递归深合并
- *   - 数组：srcValue（local）整组替换（不拼接）
- *   - 其他原始值：srcValue 覆盖
+ * 合并规则:
+ *   - 纯对象:递归深合并
+ *   - 数组:srcValue(local)整组替换(不拼接)
+ *   - 其他原始值:srcValue 覆盖
  *
- * @param base     全局 option（底）
- * @param override 本地 option（覆盖层）
+ * @param base     全局 option(底)
+ * @param override 本地 option(覆盖层)
  */
 export function mergeOption(base: EChartsOption | undefined, override: EChartsOption): EChartsOption {
   if (!base) {

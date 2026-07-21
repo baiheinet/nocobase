@@ -32,9 +32,11 @@ export class PluginEchartsGlobalConfigClient extends Plugin {
 
     // 插件设置中心（/admin/settings/）注册 ECharts configuration 入口。
     // 仿 @nocobase/plugin-theme-editor 的 pluginSettingsManager.add 模式。
-    // 持久化走服务端 themeConfig 行（uid='echarts-global-config'），不再依赖
-    // localStorage —— 见 src/server/plugin.ts 的 ACL snippet 与
-    // src/client/echarts/echartsConfigStorage.ts 的 load/saveRemoteEChartsConfig。
+    // 主题定义在服务端 themeConfig 表里（uid='echarts-vintage' / 'echarts-macarons'），
+    // 由 src/server/plugin.ts 的 seedEChartsThemes() 自动种入。Admin 在本页面
+    // 点 "Set as default" 翻转行的 default 标志位。详见 src/server/plugin.ts
+    // 的 ACL snippet 与 src/client/echarts/echartsConfigStorage.ts 的
+    // loadRemoteEChartsThemes / setRemoteEChartsDefaultTheme。
     this.app.pluginSettingsManager.add('@segplus/plugin-echarts-global-config', {
       title: tStr('ECharts configuration'),
       icon: 'PieChartOutlined',

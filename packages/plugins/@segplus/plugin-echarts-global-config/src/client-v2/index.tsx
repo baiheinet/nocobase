@@ -33,9 +33,10 @@ export class PluginEchartsGlobalConfigClient extends Plugin<any, Application> {
     // 仿 @nocobase/plugin-theme-editor client-v2 的 addMenuItem + addPageTabItem 模式：
     //   - addMenuItem: 在设置中心左侧加一个菜单项
     //   - addPageTabItem: 给该菜单项加一个页面 tab，componentLoader 懒加载页面组件
-    // 持久化走服务端 themeConfig 行（uid='echarts-global-config'），不再依赖
-    // localStorage —— 见 src/server/plugin.ts 的 ACL snippet 与
-    // src/client-v2/echarts/echartsConfigStorage.ts 的 load/saveRemoteEChartsConfig。
+    // 主题定义在服务端 themeConfig 表里（uid='echarts-vintage' / 'echarts-macarons'），
+    // 由 src/server/plugin.ts 的 seedEChartsThemes() 自动种入。详见
+    // src/client-v2/echarts/echartsConfigStorage.ts 的
+    // loadRemoteEChartsThemes / setRemoteEChartsDefaultTheme。
     this.pluginSettingsManager.addMenuItem({
       key: NAMESPACE,
       title: this.app.i18n.t('ECharts configuration', { ns: NAMESPACE }),
