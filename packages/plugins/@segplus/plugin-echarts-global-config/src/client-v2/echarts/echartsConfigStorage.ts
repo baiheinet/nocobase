@@ -116,3 +116,40 @@ export async function setRemoteEChartsDefaultTheme(api: ApiLike, targetUid: stri
     });
   }
 }
+
+export async function createRemoteEChartsTheme(
+  api: ApiLike,
+  uid: string,
+  config: Record<string, unknown>,
+): Promise<void> {
+  await api.request({
+    url: 'themeConfig:create',
+    method: 'post',
+    data: {
+      uid,
+      isBuiltIn: false,
+      optional: true,
+      default: false,
+      config,
+    },
+  });
+}
+
+export async function updateRemoteEChartsTheme(
+  api: ApiLike,
+  id: number,
+  patch: { config?: Record<string, unknown>; default?: boolean },
+): Promise<void> {
+  await api.request({
+    url: `themeConfig:update/${id}`,
+    method: 'post',
+    data: patch,
+  });
+}
+
+export async function deleteRemoteEChartsTheme(api: ApiLike, id: number): Promise<void> {
+  await api.request({
+    url: `themeConfig:destroy/${id}`,
+    method: 'post',
+  });
+}

@@ -42,6 +42,13 @@ export function setEChartsConfigApp(app: { api: unknown }): void {
   _app = app;
 }
 
+/**
+ * 取注入的 api 引用。admin settings / 创建主题等需要直接调 API 的地方用。
+ */
+export function getEChartsConfigApi(): unknown {
+  return _app?.api;
+}
+
 let initStarted = false;
 let initPromise: Promise<void> | undefined;
 /**

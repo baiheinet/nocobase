@@ -147,3 +147,61 @@ export async function setRemoteEChartsDefaultTheme(api: ApiLike, targetUid: stri
     });
   }
 }
+
+/**
+ * 创建一条新 ECharts 主题(uid 形如 'echarts-<name>')。
+ *
+ * 行为:
+ *   - POST themeConfig:create,isBuiltIn=false / optional=true / default=false
+ *     (新建的非内置主题不应自动成为默认);
+ *   - 失败抛回上层,UI surface。
+ */
+export async function createRemoteEChartsTheme(
+  api: ApiLike,
+  uid: string,
+  config: Record<string, unknown>,
+): Promise<void> {
+  await api.request({
+    url: 'themeConfig:create',
+    method: 'post',
+    data: {
+      uid,
+      isBuiltIn: false,
+      optional: true,
+      default: false,
+      config,
+    },
+  });
+}
+
+/**
+ * 更新一条已有 ECharts 主题的 config JSON(以及可选 default 标志位)。
+ *
+ * 行为:
+ *   - PATCH themeConfig:update/<id>,只发必要字段;
+ *   - 失败抛回上层,UI surface。
+ */
+export async function updateRemoteEChartsTheme(
+  api: ApiLike,
+  id: number,
+  patch: { config?: Record<string, unknown>; default?: boolean },
+): Promise<void> {
+  await api.request({
+    url: `themeConfig:update/${id}`,
+    method: 'post',
+    data: patch,
+  });
+}
+
+/**
+ * 删除一条 ECharts 主题(只允许删 !isBuiltIn,内置主题是 plugin seed 出来的,
+ * 删了 server load() 时会重新种上,容易让 admin 困惑)。
+ *
+ * 失败抛回上层,UI surface。
+ */
+export async function deleteRemoteEChartsTheme(api: ApiLike, id: number): Promise<void> {
+  await api.request({
+    url: `themeConfig:destroy/${id}`,
+    method: 'post',
+  });
+}

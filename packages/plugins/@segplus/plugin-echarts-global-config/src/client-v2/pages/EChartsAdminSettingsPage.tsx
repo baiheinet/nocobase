@@ -7,10 +7,34 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
-import { Alert, Button, Card, Empty, Space, Spin, message } from 'antd';
-import React, { useState } from 'react';
-import { useEChartsGlobalConfig } from '../hooks';
+import { Alert, Button, Card, Empty, Input, Modal, Space, Spin, message } from 'antd';
+import React, { useEffect, useState } from 'react';
+import {
+  createRemoteEChartsTheme,
+  deleteRemoteEChartsTheme,
+  updateRemoteEChartsTheme,
+} from '../echarts/echartsConfigStorage';
+import { type EChartsTheme } from '../echarts/echartsThemes';
+import { getEChartsConfigApi, useEChartsGlobalConfig } from '../hooks';
 import { useT } from '../locale';
+
+interface ThemeEditorState {
+  draft: string;
+  saved: string;
+  saving: boolean;
+  error: string | null;
+}
+
+const EMPTY_DRAFT: ThemeEditorState = { draft: '', saved: '', saving: false, error: null };
+
+function initState(theme: EChartsTheme): ThemeEditorState {
+  return {
+    draft: JSON.stringify(theme.config ?? {}, null, 2),
+    saved: JSON.stringify(theme.config ?? {}, null, 2),
+    saving: false,
+    error: null,
+  };
+}
 
 /**
  * 插件设置中心里的「ECharts configuration」页面（v2 / client-v2）。
@@ -21,12 +45,70 @@ import { useT } from '../locale';
 const EChartsAdminSettingsPage: React.FC = () => {
   const t = useT();
   const { themes, defaultThemeUid, setDefaultTheme, reload } = useEChartsGlobalConfig();
-  const [pendingUid, setPendingUid] = useState<string | null>(null);
+  const [editors, setEditors] = useState<Record<string, ThemeEditorState>>({});
   const [reloading, setReloading] = useState(false);
+  const [pendingDefaultUid, setPendingDefaultUid] = useState<string | null>(null);
+  const [pendingDeleteUid, setPendingDeleteUid] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createUid, setCreateUid] = useState('');
+  const [createConfig, setCreateConfig] = useState('{\n  "color": []\n}');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setEditors((prev) => {
+      const next: Record<string, ThemeEditorState> = {};
+      for (const t2 of themes) {
+        const savedJson = JSON.stringify(t2.config ?? {}, null, 2);
+        const existing = prev[t2.uid];
+        if (!existing || existing.saved !== savedJson) {
+          next[t2.uid] = initState(t2);
+        } else {
+          next[t2.uid] = existing;
+        }
+      }
+      return next;
+    });
+  }, [themes]);
+
+  const setEditor = (uid: string, patch: Partial<ThemeEditorState>) => {
+    setEditors((prev) => ({ ...prev, [uid]: { ...(prev[uid] ?? EMPTY_DRAFT), ...patch } }));
+  };
+
+  const handleSaveConfig = async (uid: string) => {
+    const theme = themes.find((t2) => t2.uid === uid);
+    const editor = editors[uid];
+    if (!theme || !editor || theme.id == null) return;
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(editor.draft);
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        setEditor(uid, { error: t('Config must be a JSON object') });
+        return;
+      }
+    } catch {
+      setEditor(uid, { error: t('Invalid JSON') });
+      return;
+    }
+
+    setEditor(uid, { saving: true, error: null });
+    try {
+      const api = getEChartsConfigApi();
+      if (!api) throw new Error('app not ready');
+      await updateRemoteEChartsTheme(api as never, theme.id, { config: parsed });
+      message.success(t('Theme config saved'));
+      setEditor(uid, { draft: editor.draft, saved: editor.draft, saving: false, error: null });
+      await reload();
+    } catch (err) {
+      setEditor(uid, { saving: false, error: t('Save failed') });
+      console.error('[echarts-global-config] save config failed', err);
+    }
+  };
 
   const handleSetDefault = async (uid: string) => {
     if (uid === defaultThemeUid) return;
-    setPendingUid(uid);
+    setPendingDefaultUid(uid);
     try {
       await setDefaultTheme(uid);
       message.success(t('ECharts default theme updated'));
@@ -34,7 +116,75 @@ const EChartsAdminSettingsPage: React.FC = () => {
       message.error(t('Failed to update ECharts default theme'));
       console.error('[echarts-global-config] setDefaultTheme failed', err);
     } finally {
-      setPendingUid(null);
+      setPendingDefaultUid(null);
+    }
+  };
+
+  const handleDelete = async (theme: EChartsTheme) => {
+    if (theme.isBuiltIn) return;
+    if (theme.id == null) return;
+    Modal.confirm({
+      title: t('Delete theme'),
+      content: t('Delete "{{uid}}"? This cannot be undone.', { uid: theme.uid }),
+      okText: t('Delete'),
+      okButtonProps: { danger: true },
+      cancelText: t('Cancel'),
+      onOk: async () => {
+        setPendingDeleteUid(theme.uid);
+        try {
+          const api = getEChartsConfigApi();
+          if (!api) throw new Error('app not ready');
+          await deleteRemoteEChartsTheme(api as never, theme.id as number);
+          message.success(t('Theme deleted'));
+          await reload();
+        } catch (err) {
+          message.error(t('Delete failed'));
+          console.error('[echarts-global-config] delete failed', err);
+        } finally {
+          setPendingDeleteUid(null);
+        }
+      },
+    });
+  };
+
+  const handleCreate = async () => {
+    setCreateError(null);
+    const trimmedUid = createUid.trim();
+    if (!trimmedUid) {
+      setCreateError(t('UID is required'));
+      return;
+    }
+    if (!/^echarts-[a-zA-Z0-9_-]+$/.test(trimmedUid)) {
+      setCreateError(t('UID must match /echarts-[a-zA-Z0-9_-]+/'));
+      return;
+    }
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(createConfig);
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        setCreateError(t('Config must be a JSON object'));
+        return;
+      }
+    } catch {
+      setCreateError(t('Invalid JSON'));
+      return;
+    }
+    setCreating(true);
+    try {
+      const api = getEChartsConfigApi();
+      if (!api) throw new Error('app not ready');
+      await createRemoteEChartsTheme(api as never, trimmedUid, parsed);
+      message.success(t('Theme created'));
+      setCreateOpen(false);
+      setCreateUid('');
+      setCreateConfig('{\n  "color": []\n}');
+      await reload();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setCreateError(msg);
+      console.error('[echarts-global-config] create failed', err);
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -48,33 +198,30 @@ const EChartsAdminSettingsPage: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: 24, maxWidth: 800 }}>
+    <div style={{ padding: 24, maxWidth: 1000 }}>
       <h2 style={{ marginTop: 0 }}>{t('ECharts configuration')}</h2>
       <p style={{ color: 'rgba(0,0,0,0.65)' }}>
         {t(
-          'Set the platform-wide default ECharts theme. The default theme is used when an <ECharts> instance has no theme prop and the current user has not picked a personal one.',
+          'Each ECharts theme is a row in the server-side themeConfig table. Edit the JSON config inline, set the platform-wide default, or add/remove themes.',
         )}
       </p>
-      <div style={{ marginBottom: 12 }}>
-        <Space>
-          <Button onClick={handleReload} loading={reloading}>
-            {t('Reload')}
-          </Button>
-        </Space>
-      </div>
+      <Space style={{ marginBottom: 12 }}>
+        <Button onClick={handleReload} loading={reloading}>
+          {t('Reload')}
+        </Button>
+        <Button type="primary" onClick={() => setCreateOpen(true)}>
+          {t('Add theme')}
+        </Button>
+      </Space>
       {themes.length === 0 ? (
         <Empty
           description={
             <span>
               {t('No ECharts themes found.')}{' '}
-              {t('Themes are stored in the server-side themeConfig table.')}
+              {t('Use "Add theme" to create one, or restart the server to re-seed built-ins.')}
             </span>
           }
-        >
-          <Button onClick={handleReload} loading={reloading}>
-            {t('Reload')}
-          </Button>
-        </Empty>
+        />
       ) : (
         <Space direction="vertical" style={{ width: '100%' }} size={12}>
           {defaultThemeUid ? null : (
@@ -86,6 +233,8 @@ const EChartsAdminSettingsPage: React.FC = () => {
           )}
           {themes.map((theme) => {
             const isDefault = theme.uid === defaultThemeUid;
+            const editor = editors[theme.uid] ?? EMPTY_DRAFT;
+            const dirty = editor.draft !== editor.saved;
             return (
               <Card
                 key={theme.uid}
@@ -93,40 +242,111 @@ const EChartsAdminSettingsPage: React.FC = () => {
                 title={
                   <Space>
                     <span>{theme.uid}</span>
-                    {theme.isBuiltIn ? <span style={{ color: '#999' }}>· {t('built-in')}</span> : null}
-                    {isDefault ? <strong style={{ color: '#52c41a' }}>· {t('default')}</strong> : null}
+                    {theme.isBuiltIn ? (
+                      <span style={{ color: '#999' }}>· {t('built-in')}</span>
+                    ) : null}
+                    {isDefault ? (
+                      <strong style={{ color: '#52c41a' }}>· {t('default')}</strong>
+                    ) : null}
+                    {dirty ? <span style={{ color: '#faad14' }}>· {t('unsaved')}</span> : null}
                   </Space>
                 }
                 extra={
-                  <Button
-                    type={isDefault ? 'default' : 'primary'}
-                    disabled={isDefault}
-                    loading={pendingUid === theme.uid}
-                    onClick={() => handleSetDefault(theme.uid)}
-                  >
-                    {isDefault ? t('Current default') : t('Set as default')}
-                  </Button>
+                  <Space>
+                    {isDefault ? (
+                      <Button disabled>{t('Current default')}</Button>
+                    ) : (
+                      <Button
+                        loading={pendingDefaultUid === theme.uid}
+                        onClick={() => handleSetDefault(theme.uid)}
+                      >
+                        {t('Set as default')}
+                      </Button>
+                    )}
+                    {!theme.isBuiltIn ? (
+                      <Button
+                        danger
+                        loading={pendingDeleteUid === theme.uid}
+                        onClick={() => handleDelete(theme)}
+                      >
+                        {t('Delete')}
+                      </Button>
+                    ) : null}
+                  </Space>
                 }
               >
-                <pre
-                  style={{
-                    background: '#fafafa',
-                    padding: 12,
-                    borderRadius: 4,
-                    fontSize: 12,
-                    margin: 0,
-                    maxHeight: 200,
-                    overflow: 'auto',
-                  }}
-                >
-                  {JSON.stringify(theme.config, null, 2)}
-                </pre>
+                <Input.TextArea
+                  value={editor.draft}
+                  onChange={(e) => setEditor(theme.uid, { draft: e.target.value, error: null })}
+                  rows={10}
+                  spellCheck={false}
+                  status={editor.error ? 'error' : undefined}
+                  style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
+                />
+                {editor.error ? (
+                  <div style={{ color: '#ff4d4f', marginTop: 4, fontSize: 12 }}>{editor.error}</div>
+                ) : null}
+                <Space style={{ marginTop: 8 }}>
+                  <Button
+                    type="primary"
+                    onClick={() => handleSaveConfig(theme.uid)}
+                    loading={editor.saving}
+                    disabled={!dirty}
+                  >
+                    {t('Save config')}
+                  </Button>
+                  <Button
+                    onClick={() => setEditor(theme.uid, { draft: editor.saved, error: null })}
+                    disabled={!dirty}
+                  >
+                    {t('Reset')}
+                  </Button>
+                </Space>
               </Card>
             );
           })}
         </Space>
       )}
       {reloading ? <Spin style={{ marginTop: 12 }} /> : null}
+
+      <Modal
+        title={t('Add ECharts theme')}
+        open={createOpen}
+        onCancel={() => {
+          setCreateOpen(false);
+          setCreateError(null);
+        }}
+        onOk={handleCreate}
+        confirmLoading={creating}
+        okText={t('Create')}
+        cancelText={t('Cancel')}
+        width={640}
+      >
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'block', marginBottom: 4 }}>{t('UID')}</label>
+          <Input
+            value={createUid}
+            onChange={(e) => setCreateUid(e.target.value)}
+            placeholder="echarts-my-theme"
+          />
+          <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12, marginTop: 4 }}>
+            {t('Must match /echarts-[a-zA-Z0-9_-]+/')}
+          </div>
+        </div>
+        <div>
+          <label style={{ display: 'block', marginBottom: 4 }}>{t('Config (JSON)')}</label>
+          <Input.TextArea
+            value={createConfig}
+            onChange={(e) => setCreateConfig(e.target.value)}
+            rows={10}
+            spellCheck={false}
+            style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
+          />
+        </div>
+        {createError ? (
+          <div style={{ color: '#ff4d4f', marginTop: 8 }}>{createError}</div>
+        ) : null}
+      </Modal>
     </div>
   );
 };

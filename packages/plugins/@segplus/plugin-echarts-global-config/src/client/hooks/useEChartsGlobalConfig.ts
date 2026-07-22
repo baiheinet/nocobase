@@ -64,6 +64,14 @@ export function setEChartsConfigApp(app: { api: unknown }): void {
   _app = app;
 }
 
+/**
+ * 取注入的 api 引用。admin settings / 创建主题等需要直接调 API 的地方用,
+ * 避免每个 storage 调用方都自己拿一次 _app。
+ */
+export function getEChartsConfigApi(): unknown {
+  return _app?.api;
+}
+
 interface EChartsConfigContextValue {
   /** 主题列表(从 DB 拉到的 echarts-* 行,DB 失败时为空) */
   themes: EChartsTheme[];
