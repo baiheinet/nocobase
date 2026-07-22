@@ -24,9 +24,9 @@ export interface EChartsTheme {
   /** DB 主键,setRemoteEChartsDefaultTheme 用它做 update URL */
   id?: number;
   uid: string;
+  name?: string;
   isBuiltIn: boolean;
-  optional: boolean;
-  default: boolean;
+  isDefault: boolean;
   config: {
     color?: string[];
     backgroundColor?: string;

@@ -12,47 +12,42 @@ import { Context, Next, Plugin } from '@nocobase/server';
 /**
  * 服务端插件。
  *
- * 持久化复用 @nocobase/plugin-theme-editor 已有的 themeConfig collection
- * （DDL 见 issue BAI-43 用户评论）：
+ * 持久化使用自有 echartConfig collection（DDL 见 issue BAI-43）：
  *
- *   CREATE TABLE "public"."themeConfig" (
- *     "id" int8 NOT NULL DEFAULT nextval('"themeConfig_id_seq"'::regclass),
+ *   CREATE TABLE "public"."echartConfig" (
+ *     "id" int8 NOT NULL DEFAULT nextval('"echartConfig_id_seq"'::regclass),
  *     "createdAt" timestamptz NOT NULL,
  *     "updatedAt" timestamptz NOT NULL,
- *     "config" json,
- *     "optional" bool,
- *     "isBuiltIn" bool,
- *     "uid" varchar(255),
- *     "default" bool DEFAULT false,
+ *     "name" varchar(255) NOT NULL,
+ *     "uid" varchar(255) NOT NULL,
+ *     "description" text,
+ *     "config" jsonb NOT NULL,
+ *     "isBuiltIn" bool NOT NULL DEFAULT false,
+ *     "isDefault" bool NOT NULL DEFAULT false,
+ *     "createdById" int8,
  *     PRIMARY KEY ("id")
  *   );
  *
- * 持久化策略（2026-07-21 用户第三次反馈，**主题设置是用户级不是平台级**）：
- *   - 主题定义(色板 / backgroundColor / textStyle)存 themeConfig 表,**每行一个主题**,
- *     uid 形如 'echarts-vintage' / 'echarts-macarons'。admin 在 /admin/settings/ →
- *     ECharts configuration 页面 CRUD 主题定义(本插件不暴露"平台默认"概念 —— 那
- *     跟"用户级主题设置"语义混淆;若 admin 真要给新用户一个兜底,直接改
- *     themeConfig 行的 `default` 字段,seed 里已设 vintage=true);
- *   - **用户的主题选择**存在 user 记录的 `systemSettings.echartsThemeUid` 字段上
- *     (参照 theme-editor 的 `systemSettings.themeId`),**不是 localStorage**。
- *     通过新 action `users:updateEChartsTheme` 写入,客户端 personal center
- *     下拉项 onChange 调它,然后 `window.location.reload()` 让所有 <ECharts>
- *     拿到新主题(theme-editor 用的就是这个模式);
- *   - 运行时 `useEChartsTheme()` 从 currentUser 读 echartsThemeUid,再在已
- *     register 的 themes 里查 config。
+ *   CREATE UNIQUE INDEX "echartConfig_uid_unique" ON "public"."echartConfig" ("uid");
+ *
+ * 持久化策略（2026-07-22 用户拍板）：
+ *   - 每个主题 = echartConfig 一行，uid 形如 'echarts-vintage' / 'echarts-macarons'
+ *   - config 字段是 echarts.registerTheme() 接受的完整对象
+ *   - 默认主题由 isDefault 标志位标记
+ *   - admin 在 /admin/settings/ → ECharts configuration 改 default
+ *   - user 在 personal center 选个人主题（只 localStorage）
  *
  * ACL:
- *   - themeConfig:list/get 已被 theme-editor 设为 public;
- *   - themeConfig:create/update/destroy 收口到 'pm.echarts-global-config.admin';
- *   - users:updateEChartsTheme: 登录用户都能调自己(逻辑上类似 theme-editor 的
- *     users:updateTheme)。
+ *   - echartConfig:list/get 已设为 public
+ *   - echartConfig:create/update/destroy 收口到 'pm.echarts-global-config.config'
+ *   - users:updateEChartsTheme: 登录用户都能调自己
  */
 const SEED_THEMES = [
   {
     uid: 'echarts-vintage',
+    name: 'Vintage',
     isBuiltIn: true,
-    optional: true,
-    default: true,
+    isDefault: true,
     config: {
       color: ['#d87c7c', '#919e8b', '#d7ab82', '#6e7074', '#61a0a8', '#efa18d', '#787464', '#cc7e63'],
       backgroundColor: 'transparent',
@@ -61,9 +56,9 @@ const SEED_THEMES = [
   },
   {
     uid: 'echarts-macarons',
+    name: 'Macarons',
     isBuiltIn: true,
-    optional: true,
-    default: false,
+    isDefault: false,
     config: {
       color: ['#2ec7c9', '#b6a2de', '#5ab1ef', '#ffb980', '#d87a80', '#8d98b3', '#e5cf0d', '#97b552'],
       backgroundColor: 'transparent',
@@ -113,11 +108,13 @@ export class PluginEchartsGlobalConfigServer extends Plugin {
 
   async load() {
     this.app.acl.registerSnippet({
-      name: 'pm.echarts-global-config.admin',
+      name: 'pm.echarts-global-config.config',
       actions: [
-        'themeConfig:create',
-        'themeConfig:update',
-        'themeConfig:destroy',
+        'echartConfig:create',
+        'echartConfig:update',
+        'echartConfig:destroy',
+        'echartConfig:get',
+        'echartConfig:list',
       ],
     });
 
@@ -129,7 +126,7 @@ export class PluginEchartsGlobalConfigServer extends Plugin {
   }
 
   private async seedEChartsThemes() {
-    const repo = this.db.getRepository('themeConfig');
+    const repo = this.db.getRepository('echartConfig');
     if (!repo) return;
     for (const seed of SEED_THEMES) {
       const existing = await repo.findOne({ filter: { uid: seed.uid } });

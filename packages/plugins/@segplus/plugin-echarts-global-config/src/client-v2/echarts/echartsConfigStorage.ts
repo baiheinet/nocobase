@@ -27,8 +27,8 @@ interface ApiLike {
 export async function loadRemoteEChartsThemes(api: ApiLike): Promise<EChartsTheme[]> {
   try {
     const res = await api.request({
-      url: 'themeConfig:list',
-      params: { filter: { uid: { $startsWith: 'echarts-' } }, pageSize: 100 },
+      url: 'echartConfig:list',
+      params: { filter: {}, pageSize: 100 },
     });
     const rows = res?.data ?? [];
     return rows
@@ -36,9 +36,9 @@ export async function loadRemoteEChartsThemes(api: ApiLike): Promise<EChartsThem
       .map((r) => ({
         id: r.id,
         uid: r.uid,
+        name: r.name,
         isBuiltIn: !!r.isBuiltIn,
-        optional: !!r.optional,
-        default: !!r.default,
+        isDefault: !!r.isDefault,
         config: r.config,
       }));
   } catch {
@@ -49,10 +49,10 @@ export async function loadRemoteEChartsThemes(api: ApiLike): Promise<EChartsThem
 export async function updateRemoteEChartsTheme(
   api: ApiLike,
   id: number,
-  patch: { config?: Record<string, unknown> },
+  patch: { config?: Record<string, unknown>; isDefault?: boolean },
 ): Promise<void> {
   await api.request({
-    url: `themeConfig:update/${id}`,
+    url: `echartConfig:update/${id}`,
     method: 'post',
     data: patch,
   });
@@ -61,16 +61,17 @@ export async function updateRemoteEChartsTheme(
 export async function createRemoteEChartsTheme(
   api: ApiLike,
   uid: string,
+  name: string,
   config: Record<string, unknown>,
 ): Promise<void> {
   await api.request({
-    url: 'themeConfig:create',
+    url: 'echartConfig:create',
     method: 'post',
     data: {
       uid,
+      name,
       isBuiltIn: false,
-      optional: true,
-      default: false,
+      isDefault: false,
       config,
     },
   });
@@ -78,7 +79,7 @@ export async function createRemoteEChartsTheme(
 
 export async function deleteRemoteEChartsTheme(api: ApiLike, id: number): Promise<void> {
   await api.request({
-    url: `themeConfig:destroy/${id}`,
+    url: `echartConfig:destroy/${id}`,
     method: 'post',
   });
 }

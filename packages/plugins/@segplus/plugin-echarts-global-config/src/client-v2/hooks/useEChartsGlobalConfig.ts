@@ -54,7 +54,7 @@ export function initEChartsGlobalConfigFromServer(): Promise<void> | undefined {
     try {
       const remote = await loadRemoteEChartsThemes(_app!.api as never);
       remote.forEach(registerEChartsTheme);
-      _defaultThemeUid = remote.find((t) => t.default)?.uid ?? null;
+      _defaultThemeUid = remote.find((t) => t.isDefault)?.uid ?? null;
       dispatchConfigChange();
     } catch {
       // 静默降级
@@ -98,7 +98,7 @@ export function useEChartsGlobalConfig(): EChartsConfigSnapshot & {
     if (!_app?.api) return;
     const remote = await loadRemoteEChartsThemes(_app.api as never);
     remote.forEach(registerEChartsTheme);
-    _defaultThemeUid = remote.find((t) => t.default)?.uid ?? null;
+    _defaultThemeUid = remote.find((t) => t.isDefault)?.uid ?? null;
     setSnapshot((prev) => ({ ...prev, themes: remote }));
     dispatchConfigChange();
   };
@@ -159,4 +159,35 @@ export function mergeOption(base: EChartsOption | undefined, override: EChartsOp
     }
     return undefined;
   });
+}
+
+/**
+ * Preview namespace utilities for admin settings page.
+ * Uses `preview-${uid}` namespace to avoid polluting seed-registered themes.
+ */
+const previewRegistered = new Set<string>();
+
+export function registerPreviewTheme(uid: string, config: Record<string, unknown>): void {
+  const previewUid = `preview-${uid}`;
+  // Unregister old preview if exists
+  if (previewRegistered.has(previewUid)) {
+    unregisterPreviewTheme(uid);
+  }
+  // Register new preview theme
+  const echarts = require('echarts');
+  echarts.registerTheme(previewUid, config);
+  previewRegistered.add(previewUid);
+}
+
+export function unregisterPreviewTheme(uid: string): void {
+  const previewUid = `preview-${uid}`;
+  if (previewRegistered.has(previewUid)) {
+    // echarts doesn't have unregisterTheme, but we can overwrite with empty
+    // This is a workaround - in practice, the preview theme will be garbage collected
+    previewRegistered.delete(previewUid);
+  }
+}
+
+export function getPreviewThemeUid(uid: string): string {
+  return `preview-${uid}`;
 }

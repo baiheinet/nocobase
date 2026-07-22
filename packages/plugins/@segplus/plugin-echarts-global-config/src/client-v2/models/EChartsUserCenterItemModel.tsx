@@ -33,14 +33,10 @@ export class EChartsUserCenterItemModel extends UserCenterSelectItemModel {
     let dbOptions: { uid: string; label: string }[] = [];
     if (api) {
       const themes = await loadRemoteEChartsThemes(api as never);
-      dbOptions = themes.map((t) => {
-        const stripped = t.uid.replace(/^echarts-/, '');
-        const labelKey = stripped.charAt(0).toUpperCase() + stripped.slice(1);
-        return {
-          uid: t.uid,
-          label: translateEchartsGlobalConfig(this.context, labelKey),
-        };
-      });
+      dbOptions = themes.map((t) => ({
+        uid: t.uid,
+        label: t.name || t.uid,
+      }));
     }
     const options: { label: string; value: string }[] = [
       { label: translateEchartsGlobalConfig(this.context, 'Use default'), value: '' },
