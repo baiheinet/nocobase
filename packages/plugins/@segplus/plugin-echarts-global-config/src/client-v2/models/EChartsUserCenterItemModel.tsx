@@ -9,20 +9,17 @@
 
 import { UserCenterSelectItemModel } from '@nocobase/client-v2';
 import { ECHARTS_THEME_OPTIONS } from '../echarts/echartsThemeOptions';
-import {
-  loadRemoteEChartsThemes,
-  loadStoredUserTheme,
-  saveStoredUserTheme,
-} from '../echarts/echartsConfigStorage';
+import { loadRemoteEChartsThemes, updateUserEChartsTheme } from '../echarts/echartsConfigStorage';
 import { translateEchartsGlobalConfig } from '../locale';
 
 /**
  * v2 user-center（右上角头像 → 设置）里的「ECharts theme」下拉项。
  *
- * 2026-07-21 第二次拍板后模型简化:
- *   - 主题定义在服务端,uid 形如 'echarts-vintage';
- *   - 用户选的主题只存 localStorage(per-user override,DB default 是平台级);
- *   - 不再调服务端写;admin 在 /admin/settings/ 里改 DB default。
+ * 2026-07-21 用户第三次反馈:主题设置是**用户级**。仿 theme-editor 的
+ * useUpdateThemeSettings 模式,onChange 调 `users:updateEChartsTheme` action 把
+ * 当前用户的 `systemSettings.echartsThemeUid` 写上去,然后 `window.location.reload()`
+ * 让所有 <ECharts> 实例用新主题重渲(本插件独立于 plugin-data-visualization,
+ * 无法主动通知)。
  */
 export class EChartsUserCenterItemModel extends UserCenterSelectItemModel {
   static itemId = 'echarts-global-config';
@@ -37,7 +34,6 @@ export class EChartsUserCenterItemModel extends UserCenterSelectItemModel {
     if (api) {
       const themes = await loadRemoteEChartsThemes(api as never);
       dbOptions = themes.map((t) => {
-        // 把 'echarts-vintage' 拼成 'Vintage'(i18n key)
         const stripped = t.uid.replace(/^echarts-/, '');
         const labelKey = stripped.charAt(0).toUpperCase() + stripped.slice(1);
         return {
@@ -46,32 +42,32 @@ export class EChartsUserCenterItemModel extends UserCenterSelectItemModel {
         };
       });
     }
-    // 顶部加一个「Use default」空选项,清掉 userTheme 让 <ECharts> 用 DB default
     const options: { label: string; value: string }[] = [
       { label: translateEchartsGlobalConfig(this.context, 'Use default'), value: '' },
       ...(dbOptions.length > 0
         ? dbOptions
         : ECHARTS_THEME_OPTIONS.map((o) => ({ label: o.label, value: o.uid }))
-      ).map((o) => ({
-        label: o.label,
-        value: o.uid,
-      })),
+      ).map((o) => ({ label: o.label, value: o.uid })),
     ];
 
     this.label = translateEchartsGlobalConfig(this.context, 'ECharts theme');
     this.options = options;
-    this.value = loadStoredUserTheme() ?? '';
+    const currentUid = (this.context as { user?: { systemSettings?: { echartsThemeUid?: string | null } } })
+      ?.user?.systemSettings?.echartsThemeUid;
+    this.value = currentUid ?? '';
   }
 
   async onChange(value: string) {
-    const previous = loadStoredUserTheme();
-    const next = value || undefined;
-    if (next === previous) return;
-
-    saveStoredUserTheme(next);
-
-    // 与 v1 行为一致：保存后刷新页面，使所有 <ECharts> 实例用新主题重渲
-    // （本插件独立于 plugin-data-visualization，无法主动通知其组件）。
+    const uid = value || null;
+    try {
+      const api = (this.context as { api?: unknown }).api;
+      if (!api) throw new Error('app not ready');
+      await updateUserEChartsTheme(api as never, uid);
+    } catch (err) {
+      console.error('[echarts-global-config] updateUserEChartsTheme failed', err);
+      return;
+    }
+    // theme-editor 同款行为:刷新页面让 <ECharts> 拿到新主题
     window.location.reload();
   }
 }

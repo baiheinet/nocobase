@@ -13,30 +13,29 @@ import { NAMESPACE } from './locale';
 
 export class PluginEchartsGlobalConfigClient extends Plugin<any, Application> {
   async load() {
-    // 把 app 引用注入 hooks 模块；kick off 一次性从服务端 themeConfig 拉
-    // ECharts global config 到 localStorage（init 内部去重 + 静默降级）。
+    // 把 app 引用注入 hooks 模块；kick off 一次性从服务端 themeConfig 拉 themes
+    // register 进 echarts(init 内部去重 + 静默降级)。
     setEChartsConfigApp(this.app);
     initEChartsGlobalConfigFromServer();
 
-    // 个人中心（右上角头像 → 设置）注册 ECharts 个性化配置下拉项。
-    // v2 不再用 v1 的 this.app.addUserCenterSettingsItem（@nocobase/client 的 app API），
-    // 改为注册一个 UserCenterSelectItemModel 子类，由核心 UserCenterTopbarActionModel 自动发现。
+    // 个人中心(右上角头像 → 设置)注册 ECharts 主题下拉项。v2 用
+    // UserCenterSelectItemModel 子类(UserCenterTopbarActionModel 自动发现),
+    // prepare() 拉 DB themes 作选项,onChange 调 users:updateEChartsTheme
+    // action 写 currentUser.systemSettings.echartsThemeUid,然后 reload
+    // 让 <ECharts> 拿到新主题。仿 theme-editor 的 useUpdateThemeSettings 模式
+    // (用户级不是平台级)。
     this.flowEngine.registerModelLoaders({
       EChartsUserCenterItemModel: {
         extends: 'UserCenterItemModel',
-        // 动态导入，首次真正用到这个 model 时才会加载对应模块
         loader: () => import('./models/EChartsUserCenterItemModel'),
       },
     });
 
-    // 插件设置中心（/admin/settings/）注册 ECharts configuration 入口。
-    // 仿 @nocobase/plugin-theme-editor client-v2 的 addMenuItem + addPageTabItem 模式：
-    //   - addMenuItem: 在设置中心左侧加一个菜单项
-    //   - addPageTabItem: 给该菜单项加一个页面 tab，componentLoader 懒加载页面组件
-    // 主题定义在服务端 themeConfig 表里（uid='echarts-vintage' / 'echarts-macarons'），
-    // 由 src/server/plugin.ts 的 seedEChartsThemes() 自动种入。详见
-    // src/client-v2/echarts/echartsConfigStorage.ts 的
-    // loadRemoteEChartsThemes / setRemoteEChartsDefaultTheme。
+    // 插件设置中心(/admin/settings/)注册 ECharts configuration 入口。
+    // 仿 @nocobase/plugin-theme-editor client-v2 的 addMenuItem + addPageTabItem。
+    // 本页只 CRUD 主题定义(themeConfig 行 config JSON + isBuiltIn),不再有
+    // "Set as default" 按钮 —— 那是个"平台默认"概念,跟"用户级主题设置"
+    // 语义混淆;seed 已经给 vintage=true 作为新用户 fallback。
     this.pluginSettingsManager.addMenuItem({
       key: NAMESPACE,
       title: this.app.i18n.t('ECharts configuration', { ns: NAMESPACE }),

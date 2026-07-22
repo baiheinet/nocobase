@@ -7,6 +7,7 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
+import { useCurrentUserContext } from '@nocobase/client-v2';
 import { useEffect, useState } from 'react';
 import mergeWith from 'lodash/mergeWith';
 import isPlainObject from 'lodash/isPlainObject';
@@ -15,16 +16,13 @@ import { registerEChartsTheme, type EChartsTheme } from '../echarts/echartsTheme
 import {
   loadRemoteEChartsThemes,
   loadStoredOption,
-  loadStoredUserTheme,
-  saveRemoteEChartsDefaultTheme,
   saveStoredOption,
-  saveStoredUserTheme,
+  updateUserEChartsTheme,
 } from '../echarts/echartsConfigStorage';
 
 export type { EChartsTheme } from '../echarts/echartsThemes';
 
 export interface EChartsGlobalConfig {
-  /** 用户级 option 覆盖(同 v1) */
   option?: EChartsOption;
   onRefReady?: (chart: unknown) => void;
 }
@@ -41,10 +39,6 @@ let _app: { api: unknown } | undefined;
 export function setEChartsConfigApp(app: { api: unknown }): void {
   _app = app;
 }
-
-/**
- * 取注入的 api 引用。admin settings / 创建主题等需要直接调 API 的地方用。
- */
 export function getEChartsConfigApi(): unknown {
   return _app?.api;
 }
@@ -54,7 +48,6 @@ let initPromise: Promise<void> | undefined;
 /**
  * 一次性 init:plugin load() 时调,模块级 promise 去重。
  * 拉 DB 上的 echarts-* 主题 → register → 派发 change event。
- * 网络/ACL 错误静默降级 —— render 拿到空 themes 即可。
  */
 export function initEChartsGlobalConfigFromServer(): Promise<void> | undefined {
   if (initStarted) return initPromise;
@@ -75,49 +68,45 @@ export function initEChartsGlobalConfigFromServer(): Promise<void> | undefined {
 
 interface EChartsConfigSnapshot {
   themes: EChartsTheme[];
-  defaultThemeUid: string | null;
-  userTheme: string | undefined;
+  userThemeUid: string | null;
   option: EChartsOption | undefined;
 }
 
 const EMPTY_SNAPSHOT: EChartsConfigSnapshot = {
   themes: [],
-  defaultThemeUid: null,
-  userTheme: undefined,
+  userThemeUid: null,
   option: undefined,
 };
 
 /**
- * 读取当前完整运行时配置(主题列表 + default + 用户选 + option)。
+ * 读取当前完整运行时配置(主题列表 + 当前用户主题 + option)。
  *
- * v2 没有 Provider(v1/v2 context 分裂 + 懒加载 chunk 让 Provider 边界与组件
- * 边界不一致),改成在 hook 内部 useState + useEffect 订阅 ECHARTS_CONFIG_CHANGE_EVENT,
- * 所有 setter 路径都会派发该事件,hook 自动 re-render。
+ * v2 没有 Provider。userThemeUid 从 useCurrentUserContext() 读
+ * (currentUser.data.data.systemSettings.echartsThemeUid)。
  */
 export function useEChartsGlobalConfig(): EChartsConfigSnapshot & {
   reload: () => Promise<void>;
-  setDefaultTheme: (uid: string) => Promise<void>;
-  setUserTheme: (uid: string | undefined) => void;
+  updateUserTheme: (uid: string | null) => Promise<void>;
   setOption: (opt: EChartsOption | undefined) => void;
 } {
+  const currentUser = useCurrentUserContext();
   const [snapshot, setSnapshot] = useState<EChartsConfigSnapshot>(() => ({
     themes: EMPTY_SNAPSHOT.themes,
-    defaultThemeUid: null,
-    userTheme: loadStoredUserTheme(),
+    userThemeUid: currentUser?.data?.data?.systemSettings?.echartsThemeUid ?? null,
     option: loadStoredOption(),
   }));
+
+  useEffect(() => {
+    const uid = currentUser?.data?.data?.systemSettings?.echartsThemeUid ?? null;
+    setSnapshot((prev) => ({ ...prev, userThemeUid: uid }));
+  }, [currentUser?.data?.data?.systemSettings?.echartsThemeUid]);
 
   const reload = async () => {
     if (!_app?.api) return;
     const remote = await loadRemoteEChartsThemes(_app.api as never);
     remote.forEach(registerEChartsTheme);
-    const newDefault = remote.find((t) => t.default)?.uid ?? null;
-    _defaultThemeUid = newDefault;
-    setSnapshot((prev) => ({
-      ...prev,
-      themes: remote,
-      defaultThemeUid: newDefault,
-    }));
+    _defaultThemeUid = remote.find((t) => t.default)?.uid ?? null;
+    setSnapshot((prev) => ({ ...prev, themes: remote }));
     dispatchConfigChange();
   };
 
@@ -125,24 +114,27 @@ export function useEChartsGlobalConfig(): EChartsConfigSnapshot & {
     const handler = () => {
       setSnapshot((prev) => ({
         ...prev,
-        userTheme: loadStoredUserTheme(),
         option: loadStoredOption(),
-        // themes / defaultThemeUid 走 reload,不在事件 handler 里 set(避免循环)
       }));
     };
     window.addEventListener(ECHARTS_CONFIG_CHANGE_EVENT, handler);
     return () => window.removeEventListener(ECHARTS_CONFIG_CHANGE_EVENT, handler);
   }, []);
 
-  const setDefaultTheme = async (uid: string) => {
+  const updateUserTheme = async (uid: string | null) => {
     if (!_app?.api) return;
-    await setRemoteEChartsDefaultTheme(_app.api as never, uid);
-    await reload();
-  };
-
-  const setUserTheme = (uid: string | undefined) => {
-    saveStoredUserTheme(uid);
-    setSnapshot((prev) => ({ ...prev, userTheme: uid }));
+    await updateUserEChartsTheme(_app.api as never, uid);
+    if (currentUser?.mutate) {
+      currentUser.mutate({
+        data: {
+          ...currentUser.data.data,
+          systemSettings: {
+            ...(currentUser.data.data?.systemSettings || {}),
+            echartsThemeUid: uid,
+          },
+        },
+      });
+    }
     dispatchConfigChange();
   };
 
@@ -152,32 +144,21 @@ export function useEChartsGlobalConfig(): EChartsConfigSnapshot & {
     dispatchConfigChange();
   };
 
-  return { ...snapshot, reload, setDefaultTheme, setUserTheme, setOption };
+  return { ...snapshot, reload, updateUserTheme, setOption };
 }
 
-/**
- * 模块级 cache,由 initEChartsGlobalConfigFromServer() / reload() 写入。
- * useEChartsTheme 直接读它(同步,无 API 调用),change event 触发 re-render。
- */
 let _defaultThemeUid: string | null = null;
-
-export function _setDefaultThemeUidForTest(uid: string | null): void {
-  _defaultThemeUid = uid;
-}
 
 /**
  * 推导最终 echarts 主题名,优先级同 v1:
  *   1. 本地 themeProp 显式传入 → 最高
- *   2. localStorage userTheme → 其次
- *   3. DB defaultThemeUid(init 时拉一次) → 最后
+ *   2. currentUser.systemSettings.echartsThemeUid → 其次
+ *   3. DB default 主题(init 时拉的 cache) → 最后
  *   4. undefined
- *
- * 通过 ECHARTS_CONFIG_CHANGE_EVENT 订阅 cache 更新(不直接 fetch,避免每个
- * <ECharts> 实例都打一次 API)。
  */
 export function useEChartsTheme(themeProp?: string): string | undefined {
-  const stored = loadStoredUserTheme();
-  // 用一个 tick state 在 cache 更新时触发 re-render
+  const currentUser = useCurrentUserContext();
+  const stored = currentUser?.data?.data?.systemSettings?.echartsThemeUid;
   const [, setTick] = useState(0);
   useEffect(() => {
     const handler = () => setTick((t) => t + 1);

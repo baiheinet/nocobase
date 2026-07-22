@@ -39,15 +39,13 @@ function initState(theme: EChartsTheme): ThemeEditorState {
 /**
  * 插件设置中心里的「ECharts configuration」页面（v2 / client-v2）。
  *
- * 行为与 v1 的 EChartsAdminSettings 一致。v2 重新实现一份是 v1/v2 客户端入口解耦
- * 的需要（v2 不可 import v1 @nocobase/client）。详见 v1 文件头注释。
+ * 行为与 v1 的 EChartsAdminSettings 一致。详见 v1 文件头注释。
  */
 const EChartsAdminSettingsPage: React.FC = () => {
   const t = useT();
-  const { themes, defaultThemeUid, setDefaultTheme, reload } = useEChartsGlobalConfig();
+  const { themes, reload } = useEChartsGlobalConfig();
   const [editors, setEditors] = useState<Record<string, ThemeEditorState>>({});
   const [reloading, setReloading] = useState(false);
-  const [pendingDefaultUid, setPendingDefaultUid] = useState<string | null>(null);
   const [pendingDeleteUid, setPendingDeleteUid] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createUid, setCreateUid] = useState('');
@@ -103,20 +101,6 @@ const EChartsAdminSettingsPage: React.FC = () => {
     } catch (err) {
       setEditor(uid, { saving: false, error: t('Save failed') });
       console.error('[echarts-global-config] save config failed', err);
-    }
-  };
-
-  const handleSetDefault = async (uid: string) => {
-    if (uid === defaultThemeUid) return;
-    setPendingDefaultUid(uid);
-    try {
-      await setDefaultTheme(uid);
-      message.success(t('ECharts default theme updated'));
-    } catch (err) {
-      message.error(t('Failed to update ECharts default theme'));
-      console.error('[echarts-global-config] setDefaultTheme failed', err);
-    } finally {
-      setPendingDefaultUid(null);
     }
   };
 
@@ -202,7 +186,7 @@ const EChartsAdminSettingsPage: React.FC = () => {
       <h2 style={{ marginTop: 0 }}>{t('ECharts configuration')}</h2>
       <p style={{ color: 'rgba(0,0,0,0.65)' }}>
         {t(
-          'Each ECharts theme is a row in the server-side themeConfig table. Edit the JSON config inline, set the platform-wide default, or add/remove themes.',
+          'Manage the ECharts theme definitions (each is a row in themeConfig). The default theme for new users is set by the server plugin seed; each user picks their own theme in Personal Center.',
         )}
       </p>
       <Space style={{ marginBottom: 12 }}>
@@ -224,15 +208,14 @@ const EChartsAdminSettingsPage: React.FC = () => {
         />
       ) : (
         <Space direction="vertical" style={{ width: '100%' }} size={12}>
-          {defaultThemeUid ? null : (
+          {themes.some((t2) => t2.default) ? null : (
             <Alert
               type="warning"
               showIcon
-              message={t('No default ECharts theme is set. <ECharts> will fall back to ECharts default.')}
+              message={t('No default ECharts theme is set as fallback. New users will see ECharts default.')}
             />
           )}
           {themes.map((theme) => {
-            const isDefault = theme.uid === defaultThemeUid;
             const editor = editors[theme.uid] ?? EMPTY_DRAFT;
             const dirty = editor.draft !== editor.saved;
             return (
@@ -245,34 +228,22 @@ const EChartsAdminSettingsPage: React.FC = () => {
                     {theme.isBuiltIn ? (
                       <span style={{ color: '#999' }}>· {t('built-in')}</span>
                     ) : null}
-                    {isDefault ? (
-                      <strong style={{ color: '#52c41a' }}>· {t('default')}</strong>
+                    {theme.default ? (
+                      <span style={{ color: '#52c41a' }}>· {t('default fallback')}</span>
                     ) : null}
                     {dirty ? <span style={{ color: '#faad14' }}>· {t('unsaved')}</span> : null}
                   </Space>
                 }
                 extra={
-                  <Space>
-                    {isDefault ? (
-                      <Button disabled>{t('Current default')}</Button>
-                    ) : (
-                      <Button
-                        loading={pendingDefaultUid === theme.uid}
-                        onClick={() => handleSetDefault(theme.uid)}
-                      >
-                        {t('Set as default')}
-                      </Button>
-                    )}
-                    {!theme.isBuiltIn ? (
-                      <Button
-                        danger
-                        loading={pendingDeleteUid === theme.uid}
-                        onClick={() => handleDelete(theme)}
-                      >
-                        {t('Delete')}
-                      </Button>
-                    ) : null}
-                  </Space>
+                  !theme.isBuiltIn ? (
+                    <Button
+                      danger
+                      loading={pendingDeleteUid === theme.uid}
+                      onClick={() => handleDelete(theme)}
+                    >
+                      {t('Delete')}
+                    </Button>
+                  ) : null
                 }
               >
                 <Input.TextArea

@@ -12,52 +12,22 @@ import type { EChartsOption } from 'echarts';
 /**
  * ECharts 持久化层（v1 / client）。
  *
- * 2026-07-21 用户拍板,第二次修正:
- *   - 主题定义在服务端 `themeConfig` collection 里,**每个主题一行**,uid 形如
- *     'echarts-vintage' / 'echarts-macarons',config 字段就是 echarts.registerTheme()
- *     接受的对象。原来 `uid='echarts-global-config'` 单行存 {theme, option} 的策略
- *     弃用,见 issue BAI-43 评论。
- *   - **全局默认主题**靠行上的 `default` 标志位标记(只一个为 true),
- *     由 admin 在 /admin/settings/ → ECharts configuration 页面里改。
- *   - **用户级 option 覆盖**(per-instance ECharts option 合并)只在 localStorage,
- *     不上服务端 —— 跟"平台级主题"语义不同,平台级是「我设的默认值」,option 是
- *     「我给所有 chart 套的样式覆盖」,后者跟个人偏好更近。
- *
- * localStorage key 只剩一个:用户级 option 覆盖。theme 的"用户选了哪个"也只在
- * localStorage(另一个 key),它与 DB default 的关系是:有用户选就用用户的,否则用
- * DB default。
+ * 2026-07-21 用户第三次反馈,主题设置是**用户级**不是平台级:
+ *   - 主题定义(色板 / backgroundColor / textStyle)在服务端 `themeConfig` collection
+ *     里,每行一个主题,uid 形如 'echarts-vintage' / 'echarts-macarons'。本插件
+ *     server/plugin.ts seedEChartsThemes() 幂等种入;
+ *   - **用户的主题选择**存在 user 记录的 `systemSettings.echartsThemeUid` 字段,
+ *     通过新 action `users:updateEChartsTheme` 写入(仿 theme-editor 的
+ *     users:updateTheme)。client 不再走 localStorage;
+ *   - 用户级 option 覆盖(per-instance ECharts option 合并)只在 localStorage
+ *     —— 与"主题"语义不同,theme-editor 也没存服务端,follow 同样策略。
  */
 
 import type { EChartsTheme } from './echartsThemes';
 
 const STORAGE_OPTION_KEY = 'nocobase:plugin-echarts-global-config:option';
-const STORAGE_THEME_KEY = 'nocobase:plugin-echarts-global-config:user-theme';
 
 type PersistedOption = EChartsOption | undefined;
-type PersistedUserTheme = string | undefined;
-
-export function loadStoredUserTheme(): PersistedUserTheme {
-  if (typeof window === 'undefined' || !window.localStorage) return undefined;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_THEME_KEY);
-    if (!raw) return undefined;
-    const parsed = JSON.parse(raw);
-    return typeof parsed === 'string' ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export function saveStoredUserTheme(themeUid: string | undefined): void {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    throw new Error('localStorage is not available');
-  }
-  if (themeUid === undefined) {
-    window.localStorage.removeItem(STORAGE_THEME_KEY);
-    return;
-  }
-  window.localStorage.setItem(STORAGE_THEME_KEY, JSON.stringify(themeUid));
-}
 
 export function loadStoredOption(): PersistedOption {
   if (typeof window === 'undefined' || !window.localStorage) return undefined;
@@ -100,8 +70,6 @@ interface ApiLike {
 
 /**
  * 从服务端拉所有 ECharts 主题(uid 前缀 'echarts-')。
- *
- * 失败一律静默降级 —— 让上层 render 拿到空数组 + fallback ECHARTS_THEME_OPTIONS 即可。
  */
 export async function loadRemoteEChartsThemes(api: ApiLike): Promise<EChartsTheme[]> {
   try {
@@ -126,35 +94,23 @@ export async function loadRemoteEChartsThemes(api: ApiLike): Promise<EChartsThem
 }
 
 /**
- * 把指定 theme 标记为 default(其他 echarts-* 行清掉 default)。
- *
- * 行为:
- *   - 拉所有 echarts-* 行(用 loadRemoteEChartsThemes 同款 query,小数据量够用);
- *   - 对每一行:target=true,其余=false,逐行 update(只发必要字段);
- *   - update URL 走 `themeConfig:update/<id>`(用 DB 主键,不用 uid)。
- *   - 失败抛回上层,让 admin settings 页 surface。
+ * 更新一条已有 ECharts 主题的 config JSON(只发必要字段)。
+ * admin 在 /admin/settings/ 里改主题色板用。
  */
-export async function setRemoteEChartsDefaultTheme(api: ApiLike, targetUid: string): Promise<void> {
-  const themes = await loadRemoteEChartsThemes(api);
-  for (const t of themes) {
-    const nextDefault = t.uid === targetUid;
-    if (t.default === nextDefault) continue;
-    if (t.id == null) continue;
-    await api.request({
-      url: `themeConfig:update/${t.id}`,
-      method: 'post',
-      data: { default: nextDefault },
-    });
-  }
+export async function updateRemoteEChartsTheme(
+  api: ApiLike,
+  id: number,
+  patch: { config?: Record<string, unknown> },
+): Promise<void> {
+  await api.request({
+    url: `themeConfig:update/${id}`,
+    method: 'post',
+    data: patch,
+  });
 }
 
 /**
  * 创建一条新 ECharts 主题(uid 形如 'echarts-<name>')。
- *
- * 行为:
- *   - POST themeConfig:create,isBuiltIn=false / optional=true / default=false
- *     (新建的非内置主题不应自动成为默认);
- *   - 失败抛回上层,UI surface。
  */
 export async function createRemoteEChartsTheme(
   api: ApiLike,
@@ -175,33 +131,26 @@ export async function createRemoteEChartsTheme(
 }
 
 /**
- * 更新一条已有 ECharts 主题的 config JSON(以及可选 default 标志位)。
- *
- * 行为:
- *   - PATCH themeConfig:update/<id>,只发必要字段;
- *   - 失败抛回上层,UI surface。
- */
-export async function updateRemoteEChartsTheme(
-  api: ApiLike,
-  id: number,
-  patch: { config?: Record<string, unknown>; default?: boolean },
-): Promise<void> {
-  await api.request({
-    url: `themeConfig:update/${id}`,
-    method: 'post',
-    data: patch,
-  });
-}
-
-/**
- * 删除一条 ECharts 主题(只允许删 !isBuiltIn,内置主题是 plugin seed 出来的,
- * 删了 server load() 时会重新种上,容易让 admin 困惑)。
- *
- * 失败抛回上层,UI surface。
+ * 删除一条 ECharts 主题(只允许删 !isBuiltIn,内置主题是 plugin seed 出来的)。
  */
 export async function deleteRemoteEChartsTheme(api: ApiLike, id: number): Promise<void> {
   await api.request({
     url: `themeConfig:destroy/${id}`,
     method: 'post',
+  });
+}
+
+/**
+ * 更新当前用户的主题选择(per-user,服务端 user.systemSettings.echartsThemeUid)。
+ *
+ * 仿 theme-editor 的 useUpdateThemeSettings 模式:
+ *   - POST users:updateEChartsTheme;
+ *   - 失败抛回上层让 personal center surface。
+ */
+export async function updateUserEChartsTheme(api: ApiLike, themeUid: string | null): Promise<void> {
+  await api.request({
+    url: 'users:updateEChartsTheme',
+    method: 'post',
+    data: { themeUid },
   });
 }

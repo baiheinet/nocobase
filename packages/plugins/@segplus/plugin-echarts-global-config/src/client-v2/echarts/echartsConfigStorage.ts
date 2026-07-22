@@ -18,33 +18,8 @@ import type { EChartsOption } from 'echarts';
 import type { EChartsTheme } from './echartsThemes';
 
 const STORAGE_OPTION_KEY = 'nocobase:plugin-echarts-global-config:option';
-const STORAGE_THEME_KEY = 'nocobase:plugin-echarts-global-config:user-theme';
 
 type PersistedOption = EChartsOption | undefined;
-type PersistedUserTheme = string | undefined;
-
-export function loadStoredUserTheme(): PersistedUserTheme {
-  if (typeof window === 'undefined' || !window.localStorage) return undefined;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_THEME_KEY);
-    if (!raw) return undefined;
-    const parsed = JSON.parse(raw);
-    return typeof parsed === 'string' ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export function saveStoredUserTheme(themeUid: string | undefined): void {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    throw new Error('localStorage is not available');
-  }
-  if (themeUid === undefined) {
-    window.localStorage.removeItem(STORAGE_THEME_KEY);
-    return;
-  }
-  window.localStorage.setItem(STORAGE_THEME_KEY, JSON.stringify(themeUid));
-}
 
 export function loadStoredOption(): PersistedOption {
   if (typeof window === 'undefined' || !window.localStorage) return undefined;
@@ -103,18 +78,16 @@ export async function loadRemoteEChartsThemes(api: ApiLike): Promise<EChartsThem
   }
 }
 
-export async function setRemoteEChartsDefaultTheme(api: ApiLike, targetUid: string): Promise<void> {
-  const themes = await loadRemoteEChartsThemes(api);
-  for (const t of themes) {
-    const nextDefault = t.uid === targetUid;
-    if (t.default === nextDefault) continue;
-    if (t.id == null) continue;
-    await api.request({
-      url: `themeConfig:update/${t.id}`,
-      method: 'post',
-      data: { default: nextDefault },
-    });
-  }
+export async function updateRemoteEChartsTheme(
+  api: ApiLike,
+  id: number,
+  patch: { config?: Record<string, unknown> },
+): Promise<void> {
+  await api.request({
+    url: `themeConfig:update/${id}`,
+    method: 'post',
+    data: patch,
+  });
 }
 
 export async function createRemoteEChartsTheme(
@@ -135,21 +108,17 @@ export async function createRemoteEChartsTheme(
   });
 }
 
-export async function updateRemoteEChartsTheme(
-  api: ApiLike,
-  id: number,
-  patch: { config?: Record<string, unknown>; default?: boolean },
-): Promise<void> {
-  await api.request({
-    url: `themeConfig:update/${id}`,
-    method: 'post',
-    data: patch,
-  });
-}
-
 export async function deleteRemoteEChartsTheme(api: ApiLike, id: number): Promise<void> {
   await api.request({
     url: `themeConfig:destroy/${id}`,
     method: 'post',
+  });
+}
+
+export async function updateUserEChartsTheme(api: ApiLike, themeUid: string | null): Promise<void> {
+  await api.request({
+    url: 'users:updateEChartsTheme',
+    method: 'post',
+    data: { themeUid },
   });
 }

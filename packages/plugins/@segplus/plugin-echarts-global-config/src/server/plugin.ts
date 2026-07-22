@@ -7,7 +7,7 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
-import { Plugin } from '@nocobase/server';
+import { Context, Next, Plugin } from '@nocobase/server';
 
 /**
  * 服务端插件。
@@ -27,22 +27,25 @@ import { Plugin } from '@nocobase/server';
  *     PRIMARY KEY ("id")
  *   );
  *
- * 持久化策略（2026-07-21 用户拍板，第二次修正）：
- *   - **每个 ECharts 主题 = 一行**。uid 形如 'echarts-vintage' / 'echarts-macarons'，
- *     config 字段就是 echarts.registerTheme() 接受的对象（color / backgroundColor
- *     / textStyle 等）。
- *   - **不使用**之前的 `uid='echarts-global-config'` 单行存 {theme, option} 策略。
- *     那个策略错把"选择"和"定义"混在同一行,容易脏、也跟 theme-editor 的"一行一主题"
- *     约定不一致。
- *   - **全局默认**靠行上的 `default` 标志位标记(只一个为 true)。
- *   - **用户级 option 覆盖**不走服务端,只 localStorage;与平台级主题解耦。
+ * 持久化策略（2026-07-21 用户第三次反馈，**主题设置是用户级不是平台级**）：
+ *   - 主题定义(色板 / backgroundColor / textStyle)存 themeConfig 表,**每行一个主题**,
+ *     uid 形如 'echarts-vintage' / 'echarts-macarons'。admin 在 /admin/settings/ →
+ *     ECharts configuration 页面 CRUD 主题定义(本插件不暴露"平台默认"概念 —— 那
+ *     跟"用户级主题设置"语义混淆;若 admin 真要给新用户一个兜底,直接改
+ *     themeConfig 行的 `default` 字段,seed 里已设 vintage=true);
+ *   - **用户的主题选择**存在 user 记录的 `systemSettings.echartsThemeUid` 字段上
+ *     (参照 theme-editor 的 `systemSettings.themeId`),**不是 localStorage**。
+ *     通过新 action `users:updateEChartsTheme` 写入,客户端 personal center
+ *     下拉项 onChange 调它,然后 `window.location.reload()` 让所有 <ECharts>
+ *     拿到新主题(theme-editor 用的就是这个模式);
+ *   - 运行时 `useEChartsTheme()` 从 currentUser 读 echartsThemeUid,再在已
+ *     register 的 themes 里查 config。
  *
  * ACL:
- *   - 读 (themeConfig:list/get) 已被 theme-editor 设为 public,所有用户可读
- *     (个人中心下拉 / admin settings 列主题都要拉,public 是必要的);
- *   - 写通过本插件的 snippet 'pm.echarts-global-config.admin' 收口。admin 角色
- *     默认有所有 snippet,所以 /admin/settings/ 里的 ECharts configuration 页面
- *     仅 admin 可写;其他用户进设置中心也看不到该入口(aclSnippet 限制)。
+ *   - themeConfig:list/get 已被 theme-editor 设为 public;
+ *   - themeConfig:create/update/destroy 收口到 'pm.echarts-global-config.admin';
+ *   - users:updateEChartsTheme: 登录用户都能调自己(逻辑上类似 theme-editor 的
+ *     users:updateTheme)。
  */
 const SEED_THEMES = [
   {
@@ -69,6 +72,42 @@ const SEED_THEMES = [
   },
 ];
 
+/**
+ * users:updateEChartsTheme action handler。
+ *
+ * 行为:
+ *   - 从 ctx.action.params.values.themeUid 读用户选的主题 uid;
+ *   - 把当前 user 的 systemSettings.echartsThemeUid 字段更新;
+ *   - 失败抛 ctx.throw(401/403/500)。
+ *
+ * 仿 theme-editor 的 update-user-theme.ts。
+ */
+async function updateEChartsTheme(ctx: Context, next: Next) {
+  const { themeUid } = ctx.action.params.values || {};
+  if (themeUid !== null && typeof themeUid !== 'string') {
+    ctx.throw(400, 'themeUid must be a string or null');
+  }
+  const { currentUser } = ctx.state;
+  if (!currentUser) {
+    ctx.throw(401);
+  }
+  const userRepo = ctx.db.getRepository('users');
+  if (!userRepo) {
+    ctx.throw(500, 'users repository not found');
+  }
+  const user = await userRepo.findOne({ filter: { id: currentUser.id } });
+  await userRepo.update({
+    filterByTk: currentUser.id,
+    values: {
+      systemSettings: {
+        ...(user?.systemSettings || {}),
+        echartsThemeUid: themeUid ?? null,
+      },
+    },
+  });
+  await next();
+}
+
 export class PluginEchartsGlobalConfigServer extends Plugin {
   async beforeLoad() {}
 
@@ -82,8 +121,10 @@ export class PluginEchartsGlobalConfigServer extends Plugin {
       ],
     });
 
-    // 幂等 seed:每次 plugin load 检查并补全缺失的内置主题行。
-    // 已经存在的行不 touch(保留 admin 通过 UI 改的 default / config 等)。
+    // 仿 theme-editor 的 users:updateTheme,写当前用户的 echartsThemeUid 字段。
+    this.app.resourceManager.registerActionHandler('users:updateEChartsTheme', updateEChartsTheme);
+
+    // 幂等 seed
     await this.seedEChartsThemes();
   }
 

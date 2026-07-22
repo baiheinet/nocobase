@@ -15,28 +15,29 @@ import { tStr } from './locale';
 
 export class PluginEchartsGlobalConfigClient extends Plugin {
   async load() {
-    // 把 app 引用注入 hooks 模块 —— storage 层（不依赖 @nocobase/client）
-    // 通过这个单例拿到 api，调用 :list/:create/:update 走服务端 themeConfig 行。
+    // 把 app 引用注入 hooks 模块。Provider 用它拉 themes(走 :list) + 调 CRUD API。
     setEChartsConfigApp(this.app);
 
-    // 应用根部挂一次全局 ECharts 配置 Provider（localStorage 是首屏同步读源，
-    // mount 后会异步从服务端 themeConfig 拉一次拉到再写 localStorage）。
+    // 应用根部挂一次全局 ECharts 配置 Provider。Provider:
+    //   - mount 时从 currentUser 读 echartsThemeUid 作为 userThemeUid state;
+    //   - 异步从 DB 拉 themes,register 进 echarts(用 echarts.registerTheme);
+    //   - 暴露 updateUserTheme / setOption / reload 给 personal center 与 admin 页。
     this.app.use(EChartsConfigProvider);
 
-    // 个人中心（右上角头像 → 设置）注册 ECharts 个性化配置 tab。
+    // 个人中心(右上角头像 → 设置)注册 ECharts 主题下拉项。
+    // onChange 调 users:updateEChartsTheme action 写 currentUser.systemSettings,
+    // 仿 theme-editor 的 useUpdateThemeSettings 模式(用户级不是平台级)。
     this.app.addUserCenterSettingsItem({
       name: 'echarts',
       sort: 320,
       Component: React.lazy(() => import('./settings/EChartsSettings').then((m) => ({ default: m.EChartsSettings }))),
     });
 
-    // 插件设置中心（/admin/settings/）注册 ECharts configuration 入口。
+    // 插件设置中心(/admin/settings/)注册 ECharts configuration 入口。
     // 仿 @nocobase/plugin-theme-editor 的 pluginSettingsManager.add 模式。
-    // 主题定义在服务端 themeConfig 表里（uid='echarts-vintage' / 'echarts-macarons'），
-    // 由 src/server/plugin.ts 的 seedEChartsThemes() 自动种入。Admin 在本页面
-    // 点 "Set as default" 翻转行的 default 标志位。详见 src/server/plugin.ts
-    // 的 ACL snippet 与 src/client/echarts/echartsConfigStorage.ts 的
-    // loadRemoteEChartsThemes / setRemoteEChartsDefaultTheme。
+    // 本页只 CRUD 主题定义(themeConfig 行 config JSON + isBuiltIn),不再有
+    // "Set as default" 按钮 —— 那是个"平台默认"概念,跟"用户级主题设置"
+    // 语义混淆;seed 已经给 vintage=true 作为新用户 fallback。
     this.app.pluginSettingsManager.add('@segplus/plugin-echarts-global-config', {
       title: tStr('ECharts configuration'),
       icon: 'PieChartOutlined',
