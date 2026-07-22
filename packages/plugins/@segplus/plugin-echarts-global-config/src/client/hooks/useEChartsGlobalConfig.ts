@@ -15,8 +15,6 @@ import type { EChartsOption } from 'echarts';
 import { registerEChartsTheme, type EChartsTheme } from '../echarts/echartsThemes';
 import {
   loadRemoteEChartsThemes,
-  loadStoredOption,
-  saveStoredOption,
   updateUserEChartsTheme,
 } from '../echarts/echartsConfigStorage';
 
@@ -24,14 +22,9 @@ export type { EChartsTheme } from '../echarts/echartsThemes';
 export { ECHARTS_THEME_OPTIONS } from '../echarts/echartsThemes';
 
 /**
- * ECharts 用户级 option 覆盖(本地)。
- *
- * 注意:这跟"主题"是两件事。主题是 platform theme(每个用户从下拉选,server 存);
- * option 是给所有 <ECharts> 实例的样式合并(per-user,跟个人偏好更近,跟
- * theme-editor 不存服务端 option 同款策略 —— 走 localStorage)。
+ * ECharts 全局配置(仅 onRefReady 回调;option 覆盖已移除,用户拍板 BAI-43)。
  */
 export interface EChartsGlobalConfig {
-  option?: EChartsOption;
   onRefReady?: (chart: unknown) => void;
 }
 
@@ -55,14 +48,10 @@ interface EChartsConfigContextValue {
   themes: EChartsTheme[];
   /** 用户当前选的主题 uid(从 currentUser.systemSettings.echartsThemeUid 读) */
   userThemeUid: string | null;
-  /** 用户级 option 覆盖(localStorage) */
-  option: EChartsOption | undefined;
   /** 拉一次 DB 主题(同时 register echarts) */
   reload: () => Promise<void>;
   /** 更新用户主题(写 currentUser.systemSettings.echartsThemeUid) */
   updateUserTheme: (uid: string | null) => Promise<void>;
-  /** 设置用户级 option(localStorage) */
-  setOption: (opt: EChartsOption | undefined) => void;
 }
 
 const EChartsConfigContext = createContext<EChartsConfigContextValue | undefined>(undefined);
@@ -79,13 +68,11 @@ export interface EChartsConfigProviderProps {
  *   - themes: 从 DB 拉到的 echarts-* 主题行,同时 register 进 echarts;
  *   - userThemeUid: **直接读 currentUser.systemSettings.echartsThemeUid**,
  *     不放 state —— 跟 theme-editor 的 InitializeTheme.tsx 同款做法,避免初始 null 闪;
- *   - option: 用户级 option 覆盖,localStorage。
  */
 export const EChartsConfigProvider: React.FC<EChartsConfigProviderProps> = ({ children }) => {
   const currentUser = useCurrentUserContext();
   const userThemeUid = currentUser?.data?.data?.systemSettings?.echartsThemeUid ?? null;
   const [themes, setThemes] = useState<EChartsTheme[]>([]);
-  const [option, setOptionState] = useState<EChartsOption | undefined>(() => loadStoredOption());
 
   const reload = useCallback(async () => {
     if (!_app?.api) return;
@@ -116,22 +103,14 @@ export const EChartsConfigProvider: React.FC<EChartsConfigProviderProps> = ({ ch
     dispatchConfigChange();
   }, [currentUser]);
 
-  const setOption = useCallback((opt: EChartsOption | undefined) => {
-    setOptionState(opt);
-    saveStoredOption(opt);
-    dispatchConfigChange();
-  }, []);
-
   const value = useMemo<EChartsConfigContextValue>(
     () => ({
       themes,
       userThemeUid,
-      option,
       reload,
       updateUserTheme,
-      setOption,
     }),
-    [themes, userThemeUid, option, reload, updateUserTheme, setOption],
+    [themes, userThemeUid, reload, updateUserTheme],
   );
 
   return React.createElement(EChartsConfigContext.Provider, { value }, children);
@@ -148,10 +127,8 @@ export function useEChartsGlobalConfig(): EChartsConfigContextValue {
   return {
     themes: [],
     userThemeUid: currentUser?.data?.data?.systemSettings?.echartsThemeUid ?? null,
-    option: undefined,
     reload: async () => undefined,
     updateUserTheme: async () => undefined,
-    setOption: () => undefined,
   };
 }
 

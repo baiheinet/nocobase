@@ -7,53 +7,16 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
-import type { EChartsOption } from 'echarts';
-
 /**
  * ECharts 持久化层（v1 / client）。
  *
- * 2026-07-21 用户第三次反馈,主题设置是**用户级**不是平台级:
- *   - 主题定义(色板 / backgroundColor / textStyle)在服务端 `themeConfig` collection
- *     里,每行一个主题,uid 形如 'echarts-vintage' / 'echarts-macarons'。本插件
- *     server/plugin.ts seedEChartsThemes() 幂等种入;
- *   - **用户的主题选择**存在 user 记录的 `systemSettings.echartsThemeUid` 字段,
- *     通过新 action `users:updateEChartsTheme` 写入(仿 theme-editor 的
- *     users:updateTheme)。client 不再走 localStorage;
- *   - 用户级 option 覆盖(per-instance ECharts option 合并)只在 localStorage
- *     —— 与"主题"语义不同,theme-editor 也没存服务端,follow 同样策略。
+ * 主题定义在服务端 `themeConfig` collection,每行一个主题(uid 形如
+ * 'echarts-vintage' / 'echarts-macarons')。用户的主题选择存在
+ * `user.systemSettings.echartsThemeUid`,通过 `users:updateEChartsTheme` 写入。
+ * option 覆盖已移除(死代码,用户拍板 BAI-43)。
  */
 
 import type { EChartsTheme } from './echartsThemes';
-
-const STORAGE_OPTION_KEY = 'nocobase:plugin-echarts-global-config:option';
-
-type PersistedOption = EChartsOption | undefined;
-
-export function loadStoredOption(): PersistedOption {
-  if (typeof window === 'undefined' || !window.localStorage) return undefined;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_OPTION_KEY);
-    if (!raw) return undefined;
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') {
-      return parsed as EChartsOption;
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export function saveStoredOption(option: EChartsOption | undefined): void {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    throw new Error('localStorage is not available');
-  }
-  if (option === undefined) {
-    window.localStorage.removeItem(STORAGE_OPTION_KEY);
-    return;
-  }
-  window.localStorage.setItem(STORAGE_OPTION_KEY, JSON.stringify(option));
-}
 
 /**
  * 极简的 api 客户端类型(只取我们用到的几个方法)。完整类型在 @nocobase/client /

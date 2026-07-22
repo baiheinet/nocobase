@@ -7,45 +7,13 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
-import type { EChartsOption } from 'echarts';
-
 /**
  * v2 / client-v2 副本。与 src/client/echarts/echartsConfigStorage.ts 行为一致
  * —— v1/v2 分别维护以避免互相 import(v2 不可 import v1 @nocobase/client)。
- * 字段 / 策略完全相同,详见那份文件头注释。
+ * option 覆盖已移除(死代码,用户拍板 BAI-43)。
  */
 
 import type { EChartsTheme } from './echartsThemes';
-
-const STORAGE_OPTION_KEY = 'nocobase:plugin-echarts-global-config:option';
-
-type PersistedOption = EChartsOption | undefined;
-
-export function loadStoredOption(): PersistedOption {
-  if (typeof window === 'undefined' || !window.localStorage) return undefined;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_OPTION_KEY);
-    if (!raw) return undefined;
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') {
-      return parsed as EChartsOption;
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export function saveStoredOption(option: EChartsOption | undefined): void {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    throw new Error('localStorage is not available');
-  }
-  if (option === undefined) {
-    window.localStorage.removeItem(STORAGE_OPTION_KEY);
-    return;
-  }
-  window.localStorage.setItem(STORAGE_OPTION_KEY, JSON.stringify(option));
-}
 
 interface ApiLike {
   request: (options: {

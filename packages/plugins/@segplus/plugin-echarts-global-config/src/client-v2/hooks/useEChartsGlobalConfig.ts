@@ -15,15 +15,12 @@ import type { EChartsOption } from 'echarts';
 import { registerEChartsTheme, type EChartsTheme } from '../echarts/echartsThemes';
 import {
   loadRemoteEChartsThemes,
-  loadStoredOption,
-  saveStoredOption,
   updateUserEChartsTheme,
 } from '../echarts/echartsConfigStorage';
 
 export type { EChartsTheme } from '../echarts/echartsThemes';
 
 export interface EChartsGlobalConfig {
-  option?: EChartsOption;
   onRefReady?: (chart: unknown) => void;
 }
 
@@ -69,17 +66,15 @@ export function initEChartsGlobalConfigFromServer(): Promise<void> | undefined {
 interface EChartsConfigSnapshot {
   themes: EChartsTheme[];
   userThemeUid: string | null;
-  option: EChartsOption | undefined;
 }
 
 const EMPTY_SNAPSHOT: EChartsConfigSnapshot = {
   themes: [],
   userThemeUid: null,
-  option: undefined,
 };
 
 /**
- * 读取当前完整运行时配置(主题列表 + 当前用户主题 + option)。
+ * 读取当前完整运行时配置(主题列表 + 当前用户主题)。
  *
  * v2 没有 Provider。userThemeUid 从 useCurrentUserContext() 读
  * (currentUser.data.data.systemSettings.echartsThemeUid)。
@@ -87,13 +82,11 @@ const EMPTY_SNAPSHOT: EChartsConfigSnapshot = {
 export function useEChartsGlobalConfig(): EChartsConfigSnapshot & {
   reload: () => Promise<void>;
   updateUserTheme: (uid: string | null) => Promise<void>;
-  setOption: (opt: EChartsOption | undefined) => void;
 } {
   const currentUser = useCurrentUserContext();
   const [snapshot, setSnapshot] = useState<EChartsConfigSnapshot>(() => ({
     themes: EMPTY_SNAPSHOT.themes,
     userThemeUid: currentUser?.data?.data?.systemSettings?.echartsThemeUid ?? null,
-    option: loadStoredOption(),
   }));
 
   useEffect(() => {
@@ -109,17 +102,6 @@ export function useEChartsGlobalConfig(): EChartsConfigSnapshot & {
     setSnapshot((prev) => ({ ...prev, themes: remote }));
     dispatchConfigChange();
   };
-
-  useEffect(() => {
-    const handler = () => {
-      setSnapshot((prev) => ({
-        ...prev,
-        option: loadStoredOption(),
-      }));
-    };
-    window.addEventListener(ECHARTS_CONFIG_CHANGE_EVENT, handler);
-    return () => window.removeEventListener(ECHARTS_CONFIG_CHANGE_EVENT, handler);
-  }, []);
 
   const updateUserTheme = async (uid: string | null) => {
     if (!_app?.api) return;
@@ -138,13 +120,7 @@ export function useEChartsGlobalConfig(): EChartsConfigSnapshot & {
     dispatchConfigChange();
   };
 
-  const setOption = (opt: EChartsOption | undefined) => {
-    saveStoredOption(opt);
-    setSnapshot((prev) => ({ ...prev, option: opt }));
-    dispatchConfigChange();
-  };
-
-  return { ...snapshot, reload, updateUserTheme, setOption };
+  return { ...snapshot, reload, updateUserTheme };
 }
 
 let _defaultThemeUid: string | null = null;
