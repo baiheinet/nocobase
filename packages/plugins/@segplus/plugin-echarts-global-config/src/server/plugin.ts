@@ -120,9 +120,6 @@ export class PluginEchartsGlobalConfigServer extends Plugin {
 
     // 仿 theme-editor 的 users:updateTheme,写当前用户的 echartsThemeUid 字段。
     this.app.resourceManager.registerActionHandler('users:updateEChartsTheme', updateEChartsTheme);
-
-    // 幂等 seed
-    await this.seedEChartsThemes();
   }
 
   private async seedEChartsThemes() {
@@ -135,7 +132,9 @@ export class PluginEchartsGlobalConfigServer extends Plugin {
     }
   }
 
-  async install() {}
+  async install() {
+    await this.seedEChartsThemes();
+  }
 
   async afterEnable() {}
 
