@@ -7,11 +7,11 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
-import { SchemaSettingsSelectItem } from '@nocobase/client';
+import { SchemaSettingsSelectItem, useAPIClient, useCurrentUserContext } from '@nocobase/client';
 import React, { useMemo } from 'react';
 import { ECHARTS_THEME_OPTIONS } from '../echarts/echartsThemes';
 import { updateUserEChartsTheme } from '../echarts/echartsConfigStorage';
-import { getEChartsConfigApi, useEChartsGlobalConfig } from '../hooks';
+import { useEChartsGlobalConfig } from '../hooks';
 import { useT } from '../locale';
 
 /**
@@ -29,7 +29,10 @@ import { useT } from '../locale';
  */
 export const EChartsSettings: React.FC = () => {
   const t = useT();
-  const { themes, userThemeUid } = useEChartsGlobalConfig();
+  const api = useAPIClient();
+  const currentUser = useCurrentUserContext();
+  const userThemeUid = currentUser?.data?.data?.systemSettings?.echartsThemeUid ?? null;
+  const { themes } = useEChartsGlobalConfig();
 
   const options = useMemo(() => {
     const source =
@@ -41,19 +44,14 @@ export const EChartsSettings: React.FC = () => {
             return { label: t(labelKey), value: t2.uid };
           })
         : ECHARTS_THEME_OPTIONS.map((o) => ({ label: t(o.label), value: o.uid }));
-    return [
-      { label: t('Use default'), value: '' },
-      ...source,
-    ];
+    return [{ label: t('Use default'), value: '' }, ...source];
   }, [themes, t]);
 
   const handleChange = async (value: string) => {
     const uid = value || null;
     if ((uid ?? null) === (userThemeUid ?? null)) return;
     try {
-      const api = getEChartsConfigApi();
-      if (!api) throw new Error('app not ready');
-      await updateUserEChartsTheme(api as never, uid);
+      await updateUserEChartsTheme(api, uid);
     } catch (err) {
       console.error('[echarts-global-config] updateUserEChartsTheme failed', err);
       return;

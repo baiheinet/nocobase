@@ -10,7 +10,7 @@
 /**
  * ECharts 持久化层（v1 / client）。
  *
- * 主题定义在服务端 `themeConfig` collection,每行一个主题(uid 形如
+ * 主题定义在服务端 `echartConfig` collection,每行一个主题(uid 形如
  * 'echarts-vintage' / 'echarts-macarons')。用户的主题选择存在
  * `user.systemSettings.echartsThemeUid`,通过 `users:updateEChartsTheme` 写入。
  * option 覆盖已移除(死代码,用户拍板 BAI-43)。
@@ -34,27 +34,31 @@ interface ApiLike {
 /**
  * 从服务端拉所有 ECharts 主题(uid 前缀 'echarts-')。
  */
-export async function loadRemoteEChartsThemes(api: ApiLike): Promise<EChartsTheme[]> {
+export async function loadEChartsThemes(api: ApiLike): Promise<EChartsTheme[]> {
   try {
     const res = await api.request({
-      url: 'themeConfig:list',
+      url: 'echartConfig:list',
       params: { filter: { uid: { $startsWith: 'echarts-' } }, pageSize: 100 },
     });
-    const rows = res?.data ?? [];
+    const rows: any[] = (res?.data as any)?.data ?? res?.data ?? [];
     return rows
       .filter((r) => r && typeof r.uid === 'string' && r.config && typeof r.config === 'object')
       .map((r) => ({
         id: r.id,
         uid: r.uid,
+        name: typeof r.name === 'string' ? r.name : undefined,
         isBuiltIn: !!r.isBuiltIn,
-        optional: !!r.optional,
-        default: !!r.default,
+        isDefault: !!r.isDefault,
         config: r.config,
       }));
-  } catch {
+  } catch (err) {
+    console.error('[echarts-global-config] loadEChartsThemes failed', err);
     return [];
   }
 }
+
+/** 兼容旧名,内部走 loadEChartsThemes。 */
+export const loadRemoteEChartsThemes = loadEChartsThemes;
 
 /**
  * 更新一条已有 ECharts 主题的 config JSON(只发必要字段)。
@@ -66,7 +70,7 @@ export async function updateRemoteEChartsTheme(
   patch: { config?: Record<string, unknown> },
 ): Promise<void> {
   await api.request({
-    url: `themeConfig:update/${id}`,
+    url: `echartConfig:update/${id}`,
     method: 'post',
     data: patch,
   });
@@ -78,16 +82,17 @@ export async function updateRemoteEChartsTheme(
 export async function createRemoteEChartsTheme(
   api: ApiLike,
   uid: string,
+  name: string,
   config: Record<string, unknown>,
 ): Promise<void> {
   await api.request({
-    url: 'themeConfig:create',
+    url: 'echartConfig:create',
     method: 'post',
     data: {
       uid,
+      name,
       isBuiltIn: false,
-      optional: true,
-      default: false,
+      isDefault: false,
       config,
     },
   });
@@ -98,7 +103,7 @@ export async function createRemoteEChartsTheme(
  */
 export async function deleteRemoteEChartsTheme(api: ApiLike, id: number): Promise<void> {
   await api.request({
-    url: `themeConfig:destroy/${id}`,
+    url: `echartConfig:destroy/${id}`,
     method: 'post',
   });
 }

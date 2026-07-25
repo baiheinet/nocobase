@@ -26,12 +26,12 @@ import * as echarts from 'echarts';
  */
 
 export interface EChartsTheme {
-  /** DB 主键,setRemoteEChartsDefaultTheme 用它做 update URL */
+  /** DB 主键,update/delete URL 用 */
   id?: number;
   uid: string;
+  name?: string;
   isBuiltIn: boolean;
-  optional: boolean;
-  default: boolean;
+  isDefault: boolean;
   config: {
     color?: string[];
     backgroundColor?: string;

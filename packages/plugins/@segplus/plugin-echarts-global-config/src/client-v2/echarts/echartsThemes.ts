@@ -12,16 +12,7 @@ import { ECHARTS_THEME_OPTIONS as OPTIONS } from './echartsThemeOptions';
 
 export { OPTIONS as ECHARTS_THEME_OPTIONS };
 
-/**
- * echarts theme definitions 与注册入口(v2 / client-v2 副本)。
- *
- * 2026-07-21 用户拍板迁移到数据库后,本文件与 src/client/echarts/echartsThemes.ts
- * 行为一致 —— 仅作为单条注册入口 + fallback label,真实色板从 DB 拉。
- * 详见 src/client/echarts/echartsThemes.ts 头注释。
- */
-
 export interface EChartsTheme {
-  /** DB 主键,setRemoteEChartsDefaultTheme 用它做 update URL */
   id?: number;
   uid: string;
   name?: string;
@@ -35,14 +26,49 @@ export interface EChartsTheme {
   };
 }
 
-const registered = new Set<string>();
+/**
+ * 关键约束: NocoBase plugin 各自 bundle 独立的 echarts 实例
+ * (e.g. plugin-data-visualization 一个,我们 plugin 一个,版本可能都不一样),
+ * 跨 plugin 用 echarts.registerTheme(uid, config) 是**不共享的**:
+ * A 实例的 registry 在 B 实例里完全看不到。
+ *
+ * 解决方案: 把 config 写到 window 全局,data-visualization 的 ECharts 从
+ * window 读 config 对象,直接 echarts.init(dom, config) 绕过 registerTheme 机制。
+ * window 是浏览器全局,所有 plugin 同一份。
+ */
+const GLOBAL_THEMES_KEY = '__echartsGlobalThemes';
 
-export function registerEChartsTheme(theme: EChartsTheme): void {
-  if (registered.has(theme.uid)) return;
-  registered.add(theme.uid);
-  echarts.registerTheme(theme.uid, theme.config);
+function getGlobalRegistry(): Record<string, Record<string, unknown>> {
+  if (typeof window === 'undefined') return {};
+  return ((window as any)[GLOBAL_THEMES_KEY] ||= {}) as Record<string, Record<string, unknown>>;
 }
 
-export function __resetEChartsThemeRegistryForTests(): void {
-  registered.clear();
+export function registerEChartsTheme(theme: EChartsTheme): void {
+  getGlobalRegistry()[theme.uid] = theme.config;
+}
+
+export function getEChartsThemeConfig(uid: string): Record<string, unknown> | undefined {
+  return getGlobalRegistry()[uid];
+}
+
+const previewRegistered = new Set<string>();
+
+/**
+ * preview 用的临时 theme。registerPreviewTheme 和 preview chart 的 echarts.init
+ * 在同一个 echarts 实例(plugin admin page 内部),所以可以继续用
+ * echarts.registerTheme。走 window 全局反而会被 data-visualization 的另一个实例
+ * 误读,反而错。
+ */
+export function registerPreviewTheme(uid: string, config: Record<string, unknown>): void {
+  const previewUid = `preview-${uid}`;
+  echarts.registerTheme(previewUid, config);
+  previewRegistered.add(previewUid);
+}
+
+export function unregisterPreviewTheme(uid: string): void {
+  previewRegistered.delete(`preview-${uid}`);
+}
+
+export function getPreviewThemeUid(uid: string): string {
+  return `preview-${uid}`;
 }

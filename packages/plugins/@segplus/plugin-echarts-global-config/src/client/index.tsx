@@ -10,13 +10,15 @@
 import { Plugin } from '@nocobase/client';
 import React from 'react';
 
-import { EChartsConfigProvider, setEChartsConfigApp } from './hooks';
-import { tStr } from './locale';
+import { localeResources } from '../locale';
+import { EChartsConfigProvider } from './hooks';
+import { NAMESPACE, tStr } from './locale';
 
 export class PluginEchartsGlobalConfigClient extends Plugin {
   async load() {
-    // 把 app 引用注入 hooks 模块。Provider 用它拉 themes(走 :list) + 调 CRUD API。
-    setEChartsConfigApp(this.app);
+    Object.entries(localeResources).forEach(([lang, resource]) => {
+      this.app.i18n.addResources(lang, NAMESPACE, resource);
+    });
 
     // 应用根部挂一次全局 ECharts 配置 Provider。Provider:
     //   - mount 时从 currentUser 读 echartsThemeUid 作为 userThemeUid state;
@@ -41,7 +43,7 @@ export class PluginEchartsGlobalConfigClient extends Plugin {
     this.app.pluginSettingsManager.add('@segplus/plugin-echarts-global-config', {
       title: tStr('ECharts configuration'),
       icon: 'PieChartOutlined',
-      aclSnippet: 'pm.echarts-global-config.admin',
+      aclSnippet: 'pm.echarts-global-config.config',
       Component: React.lazy(() =>
         import('./settings/EChartsAdminSettings').then((m) => ({ default: m.EChartsAdminSettings })),
       ),

@@ -36,12 +36,14 @@ export async function loadRemoteEChartsThemes(api: ApiLike): Promise<EChartsThem
       .map((r) => ({
         id: r.id,
         uid: r.uid,
-        name: r.name,
+        name: typeof r.name === 'string' ? r.name : undefined,
         isBuiltIn: !!r.isBuiltIn,
         isDefault: !!r.isDefault,
         config: r.config,
       }));
-  } catch {
+  } catch (err) {
+    // 不再静默吞错,记到 console 方便排查
+    console.error('[echarts-global-config] loadRemoteEChartsThemes failed', err);
     return [];
   }
 }

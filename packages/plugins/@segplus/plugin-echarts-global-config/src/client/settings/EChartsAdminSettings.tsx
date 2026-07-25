@@ -7,6 +7,7 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
+import { useAPIClient } from '@nocobase/client';
 import { Alert, Button, Card, Empty, Input, Modal, Space, Spin, message } from 'antd';
 import React, { useEffect, useState } from 'react';
 import {
@@ -15,7 +16,7 @@ import {
   updateRemoteEChartsTheme,
 } from '../echarts/echartsConfigStorage';
 import { type EChartsTheme } from '../echarts/echartsThemes';
-import { getEChartsConfigApi, useEChartsGlobalConfig } from '../hooks';
+import { useEChartsGlobalConfig } from '../hooks';
 import { useT } from '../locale';
 
 interface ThemeEditorState {
@@ -49,12 +50,13 @@ function initState(theme: EChartsTheme): ThemeEditorState {
  */
 export const EChartsAdminSettings: React.FC = () => {
   const t = useT();
-  const { themes, reload } = useEChartsGlobalConfig();
+  const api = useAPIClient();
+  const { themes, loading, refresh } = useEChartsGlobalConfig();
   const [editors, setEditors] = useState<Record<string, ThemeEditorState>>({});
-  const [reloading, setReloading] = useState(false);
   const [pendingDeleteUid, setPendingDeleteUid] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createUid, setCreateUid] = useState('');
+  const [createName, setCreateName] = useState('');
   const [createConfig, setCreateConfig] = useState('{\n  "color": []\n}');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -98,12 +100,10 @@ export const EChartsAdminSettings: React.FC = () => {
 
     setEditor(uid, { saving: true, error: null });
     try {
-      const api = getEChartsConfigApi();
-      if (!api) throw new Error('app not ready');
-      await updateRemoteEChartsTheme(api as never, theme.id, { config: parsed });
+      await updateRemoteEChartsTheme(api, theme.id, { config: parsed });
       message.success(t('Theme config saved'));
       setEditor(uid, { draft: editor.draft, saved: editor.draft, saving: false, error: null });
-      await reload();
+      await refresh();
     } catch (err) {
       setEditor(uid, { saving: false, error: t('Save failed') });
       console.error('[echarts-global-config] save config failed', err);
@@ -122,11 +122,9 @@ export const EChartsAdminSettings: React.FC = () => {
       onOk: async () => {
         setPendingDeleteUid(theme.uid);
         try {
-          const api = getEChartsConfigApi();
-          if (!api) throw new Error('app not ready');
-          await deleteRemoteEChartsTheme(api as never, theme.id as number);
+          await deleteRemoteEChartsTheme(api, theme.id as number);
           message.success(t('Theme deleted'));
-          await reload();
+          await refresh();
         } catch (err) {
           message.error(t('Delete failed'));
           console.error('[echarts-global-config] delete failed', err);
@@ -140,8 +138,13 @@ export const EChartsAdminSettings: React.FC = () => {
   const handleCreate = async () => {
     setCreateError(null);
     const trimmedUid = createUid.trim();
+    const trimmedName = createName.trim();
     if (!trimmedUid) {
       setCreateError(t('UID is required'));
+      return;
+    }
+    if (!trimmedName) {
+      setCreateError(t('Name is required'));
       return;
     }
     if (!/^echarts-[a-zA-Z0-9_-]+$/.test(trimmedUid)) {
@@ -161,14 +164,13 @@ export const EChartsAdminSettings: React.FC = () => {
     }
     setCreating(true);
     try {
-      const api = getEChartsConfigApi();
-      if (!api) throw new Error('app not ready');
-      await createRemoteEChartsTheme(api as never, trimmedUid, parsed);
+      await createRemoteEChartsTheme(api, trimmedUid, trimmedName, parsed);
       message.success(t('Theme created'));
       setCreateOpen(false);
       setCreateUid('');
+      setCreateName('');
       setCreateConfig('{\n  "color": []\n}');
-      await reload();
+      await refresh();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setCreateError(msg);
@@ -178,13 +180,8 @@ export const EChartsAdminSettings: React.FC = () => {
     }
   };
 
-  const handleReload = async () => {
-    setReloading(true);
-    try {
-      await reload();
-    } finally {
-      setReloading(false);
-    }
+  const handleReload = () => {
+    refresh();
   };
 
   return (
@@ -196,7 +193,7 @@ export const EChartsAdminSettings: React.FC = () => {
         )}
       </p>
       <Space style={{ marginBottom: 12 }}>
-        <Button onClick={handleReload} loading={reloading}>
+        <Button onClick={handleReload} loading={loading}>
           {t('Reload')}
         </Button>
         <Button type="primary" onClick={() => setCreateOpen(true)}>
@@ -231,22 +228,14 @@ export const EChartsAdminSettings: React.FC = () => {
                 title={
                   <Space>
                     <span>{theme.uid}</span>
-                    {theme.isBuiltIn ? (
-                      <span style={{ color: '#999' }}>· {t('built-in')}</span>
-                    ) : null}
-                    {theme.default ? (
-                      <span style={{ color: '#52c41a' }}>· {t('default fallback')}</span>
-                    ) : null}
+                    {theme.isBuiltIn ? <span style={{ color: '#999' }}>· {t('built-in')}</span> : null}
+                    {theme.default ? <span style={{ color: '#52c41a' }}>· {t('default fallback')}</span> : null}
                     {dirty ? <span style={{ color: '#faad14' }}>· {t('unsaved')}</span> : null}
                   </Space>
                 }
                 extra={
                   !theme.isBuiltIn ? (
-                    <Button
-                      danger
-                      loading={pendingDeleteUid === theme.uid}
-                      onClick={() => handleDelete(theme)}
-                    >
+                    <Button danger loading={pendingDeleteUid === theme.uid} onClick={() => handleDelete(theme)}>
                       {t('Delete')}
                     </Button>
                   ) : null
@@ -272,10 +261,7 @@ export const EChartsAdminSettings: React.FC = () => {
                   >
                     {t('Save config')}
                   </Button>
-                  <Button
-                    onClick={() => setEditor(theme.uid, { draft: editor.saved, error: null })}
-                    disabled={!dirty}
-                  >
+                  <Button onClick={() => setEditor(theme.uid, { draft: editor.saved, error: null })} disabled={!dirty}>
                     {t('Reset')}
                   </Button>
                 </Space>
@@ -284,7 +270,7 @@ export const EChartsAdminSettings: React.FC = () => {
           })}
         </Space>
       )}
-      {reloading ? <Spin style={{ marginTop: 12 }} /> : null}
+      {loading ? <Spin style={{ marginTop: 12 }} /> : null}
 
       <Modal
         title={t('Add ECharts theme')}
@@ -301,14 +287,14 @@ export const EChartsAdminSettings: React.FC = () => {
       >
         <div style={{ marginBottom: 12 }}>
           <label style={{ display: 'block', marginBottom: 4 }}>{t('UID')}</label>
-          <Input
-            value={createUid}
-            onChange={(e) => setCreateUid(e.target.value)}
-            placeholder="echarts-my-theme"
-          />
+          <Input value={createUid} onChange={(e) => setCreateUid(e.target.value)} placeholder="echarts-my-theme" />
           <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12, marginTop: 4 }}>
             {t('Must match /echarts-[a-zA-Z0-9_-]+/')}
           </div>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'block', marginBottom: 4 }}>{t('Name')}</label>
+          <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="My Theme" />
         </div>
         <div>
           <label style={{ display: 'block', marginBottom: 4 }}>{t('Config (JSON)')}</label>
@@ -320,9 +306,7 @@ export const EChartsAdminSettings: React.FC = () => {
             style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
           />
         </div>
-        {createError ? (
-          <div style={{ color: '#ff4d4f', marginTop: 8 }}>{createError}</div>
-        ) : null}
+        {createError ? <div style={{ color: '#ff4d4f', marginTop: 8 }}>{createError}</div> : null}
       </Modal>
     </div>
   );

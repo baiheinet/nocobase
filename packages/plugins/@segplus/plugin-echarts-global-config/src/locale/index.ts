@@ -7,4 +7,10 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
-export * from './useEChartsGlobalConfig';
+import enUS from './en-US.json';
+import zhCN from './zh-CN.json';
+
+export const localeResources = {
+  'en-US': enUS,
+  'zh-CN': zhCN,
+};

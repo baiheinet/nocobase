@@ -7,33 +7,19 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
-import {
-  Alert,
-  Button,
-  Card,
-  ColorPicker,
-  Empty,
-  Input,
-  Modal,
-  Space,
-  Spin,
-  Tabs,
-  message,
-} from 'antd';
+import { useFlowContext } from '@nocobase/flow-engine';
+import { Alert, Button, Card, ColorPicker, Empty, Input, Modal, Space, Spin, Tabs, message } from 'antd';
+import { useRequest } from 'ahooks';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import * as echarts from 'echarts';
 import {
-  createRemoteEChartsTheme,
-  deleteRemoteEChartsTheme,
-  updateRemoteEChartsTheme,
-} from '../echarts/echartsConfigStorage';
-import { type EChartsTheme } from '../echarts/echartsThemes';
-import {
-  getEChartsConfigApi,
-  registerPreviewTheme,
-  unregisterPreviewTheme,
-  useEChartsGlobalConfig,
-} from '../hooks';
+  createEChartsTheme,
+  deleteEChartsTheme,
+  listEChartsThemes,
+  setEChartsThemeAsDefault,
+  updateEChartsThemeConfig,
+} from '../utils/echartsThemeApi';
+import { type EChartsTheme, registerPreviewTheme, unregisterPreviewTheme } from '../echarts/echartsThemes';
 import { useT } from '../locale';
 
 interface ThemeEditorState {
@@ -54,6 +40,36 @@ function initState(theme: EChartsTheme): ThemeEditorState {
   };
 }
 
+const PreviewChart: React.FC<{ theme: EChartsTheme }> = ({ theme }) => {
+  const chartRef = React.useRef<HTMLDivElement>(null);
+  const chartInstance = React.useRef<echarts.ECharts | null>(null);
+
+  useEffect(() => {
+    if (!chartRef.current) return;
+    if (chartInstance.current) {
+      chartInstance.current.dispose();
+    }
+    const previewUid = `preview-${theme.uid}`;
+    chartInstance.current = echarts.init(chartRef.current, previewUid);
+    chartInstance.current.setOption({
+      title: { text: theme.name || theme.uid },
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['Sales'] },
+      xAxis: { type: 'category', data: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
+      yAxis: { type: 'value' },
+      series: [{ name: 'Sales', type: 'line', data: [120, 200, 150, 80, 70, 110, 130] }],
+    });
+    return () => {
+      if (chartInstance.current) {
+        chartInstance.current.dispose();
+        chartInstance.current = null;
+      }
+    };
+  }, [theme.uid, theme.name]);
+
+  return <div ref={chartRef} style={{ width: '100%', height: 300 }} />;
+};
+
 /**
  * ECharts 主题编辑器页面（v2 / client-v2）。
  *
@@ -62,9 +78,13 @@ function initState(theme: EChartsTheme): ThemeEditorState {
  */
 const EChartsAdminSettingsPage: React.FC = () => {
   const t = useT();
-  const { themes, reload } = useEChartsGlobalConfig();
+  const ctx = useFlowContext();
+  const {
+    data: themes = [],
+    loading,
+    refresh,
+  } = useRequest(() => listEChartsThemes(ctx.api), { refreshDeps: [ctx.api] });
   const [editors, setEditors] = useState<Record<string, ThemeEditorState>>({});
-  const [reloading, setReloading] = useState(false);
   const [pendingDeleteUid, setPendingDeleteUid] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createUid, setCreateUid] = useState('');
@@ -75,10 +95,7 @@ const EChartsAdminSettingsPage: React.FC = () => {
 
   // Currently selected theme
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
-  const selectedTheme = useMemo(
-    () => themes.find((t) => t.uid === selectedUid) ?? null,
-    [themes, selectedUid],
-  );
+  const selectedTheme = useMemo(() => themes.find((t) => t.uid === selectedUid) ?? null, [themes, selectedUid]);
 
   // Auto-select first theme if none selected
   useEffect(() => {
@@ -140,7 +157,7 @@ const EChartsAdminSettingsPage: React.FC = () => {
   // Cleanup preview themes on unmount
   useEffect(() => {
     return () => {
-      themes.forEach((t) => unregisterPreviewTheme(t.uid));
+      themes.forEach((t) => t.uid && unregisterPreviewTheme(t.uid));
     };
   }, []);
 
@@ -154,12 +171,13 @@ const EChartsAdminSettingsPage: React.FC = () => {
 
     setEditor(uid, { saving: true, error: null });
     try {
-      const api = getEChartsConfigApi();
-      if (!api) throw new Error('app not ready');
-      await updateRemoteEChartsTheme(api as never, theme.id, { config: parsed });
+      await updateEChartsThemeConfig(ctx.api, theme.id, parsed);
+      // 改完 config 后,echarts 全局的主题通过 reload 时 Provider 重新 register 拿到。
+      // data-visualization chart 实例已经 init 的不会自动 re-render —— admin
+      // 自己 reload 一下整页即可。
       message.success(t('Theme config saved'));
       setEditor(uid, { draft: editor.draft, saved: editor.draft, saving: false, error: null });
-      await reload();
+      await refresh();
     } catch (err) {
       setEditor(uid, { saving: false, error: t('Save failed') });
       console.error('[echarts-global-config] save config failed', err);
@@ -169,18 +187,9 @@ const EChartsAdminSettingsPage: React.FC = () => {
   const handleSetDefault = async (theme: EChartsTheme) => {
     if (theme.id == null) return;
     try {
-      const api = getEChartsConfigApi();
-      if (!api) throw new Error('app not ready');
-      // First, unset all defaults
-      for (const t of themes) {
-        if (t.isDefault && t.id != null && t.id !== theme.id) {
-          await updateRemoteEChartsTheme(api as never, t.id, { isDefault: false });
-        }
-      }
-      // Then set this one as default
-      await updateRemoteEChartsTheme(api as never, theme.id, { isDefault: true });
+      await setEChartsThemeAsDefault(ctx.api, theme.id, themes);
       message.success(t('Default theme updated'));
-      await reload();
+      await refresh();
     } catch (err) {
       message.error(t('Update failed'));
       console.error('[echarts-global-config] set default failed', err);
@@ -199,14 +208,12 @@ const EChartsAdminSettingsPage: React.FC = () => {
       onOk: async () => {
         setPendingDeleteUid(theme.uid);
         try {
-          const api = getEChartsConfigApi();
-          if (!api) throw new Error('app not ready');
-          await deleteRemoteEChartsTheme(api as never, theme.id as number);
+          await deleteEChartsTheme(ctx.api, theme.id as number);
           message.success(t('Theme deleted'));
           if (selectedUid === theme.uid) {
             setSelectedUid(themes.find((t) => t.uid !== theme.uid)?.uid ?? null);
           }
-          await reload();
+          await refresh();
         } catch (err) {
           message.error(t('Delete failed'));
           console.error('[echarts-global-config] delete failed', err);
@@ -246,15 +253,13 @@ const EChartsAdminSettingsPage: React.FC = () => {
     }
     setCreating(true);
     try {
-      const api = getEChartsConfigApi();
-      if (!api) throw new Error('app not ready');
-      await createRemoteEChartsTheme(api as never, trimmedUid, trimmedName, parsed);
+      await createEChartsTheme(ctx.api, { uid: trimmedUid, name: trimmedName, config: parsed });
       message.success(t('Theme created'));
       setCreateOpen(false);
       setCreateUid('');
       setCreateName('');
       setCreateConfig('{\n  "color": []\n}');
-      await reload();
+      await refresh();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setCreateError(msg);
@@ -264,13 +269,8 @@ const EChartsAdminSettingsPage: React.FC = () => {
     }
   };
 
-  const handleReload = async () => {
-    setReloading(true);
-    try {
-      await reload();
-    } finally {
-      setReloading(false);
-    }
+  const handleReload = () => {
+    refresh();
   };
 
   // Render structured form editor
@@ -452,38 +452,6 @@ const EChartsAdminSettingsPage: React.FC = () => {
     );
   };
 
-  // Render preview chart
-  const renderPreview = (theme: EChartsTheme) => {
-    const chartRef = React.useRef<HTMLDivElement>(null);
-    const chartInstance = React.useRef<echarts.ECharts | null>(null);
-
-    useEffect(() => {
-      if (chartRef.current) {
-        if (chartInstance.current) {
-          chartInstance.current.dispose();
-        }
-        const previewUid = `preview-${theme.uid}`;
-        chartInstance.current = echarts.init(chartRef.current, previewUid);
-        chartInstance.current.setOption({
-          title: { text: theme.name || theme.uid },
-          tooltip: { trigger: 'axis' },
-          legend: { data: ['Sales'] },
-          xAxis: { type: 'category', data: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
-          yAxis: { type: 'value' },
-          series: [{ name: 'Sales', type: 'line', data: [120, 200, 150, 80, 70, 110, 130] }],
-        });
-      }
-      return () => {
-        if (chartInstance.current) {
-          chartInstance.current.dispose();
-          chartInstance.current = null;
-        }
-      };
-    }, [theme.uid]);
-
-    return <div ref={chartRef} style={{ width: '100%', height: 300 }} />;
-  };
-
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
       {/* Left Sidebar - Theme List */}
@@ -497,15 +465,11 @@ const EChartsAdminSettingsPage: React.FC = () => {
       >
         <Space style={{ marginBottom: 16, width: '100%', justifyContent: 'space-between' }}>
           <h3 style={{ margin: 0 }}>{t('Themes')}</h3>
-          <Button size="small" onClick={handleReload} loading={reloading}>
+          <Button size="small" onClick={handleReload} loading={loading}>
             {t('Reload')}
           </Button>
         </Space>
-        <Button
-          type="primary"
-          style={{ width: '100%', marginBottom: 12 }}
-          onClick={() => setCreateOpen(true)}
-        >
+        <Button type="primary" style={{ width: '100%', marginBottom: 12 }} onClick={() => setCreateOpen(true)}>
           {t('Add theme')}
         </Button>
         {themes.length === 0 ? (
@@ -566,9 +530,7 @@ const EChartsAdminSettingsPage: React.FC = () => {
                     <div>
                       <Input.TextArea
                         value={editors[selectedTheme.uid]?.draft || ''}
-                        onChange={(e) =>
-                          setEditor(selectedTheme.uid, { draft: e.target.value, error: null })
-                        }
+                        onChange={(e) => setEditor(selectedTheme.uid, { draft: e.target.value, error: null })}
                         rows={20}
                         spellCheck={false}
                         status={editors[selectedTheme.uid]?.error ? 'error' : undefined}
@@ -589,7 +551,7 @@ const EChartsAdminSettingsPage: React.FC = () => {
 
             {/* Preview */}
             <Card size="small" title={t('Preview')} style={{ marginTop: 16 }}>
-              {renderPreview(selectedTheme)}
+              <PreviewChart theme={selectedTheme} />
             </Card>
 
             {/* Action Buttons */}
@@ -614,9 +576,7 @@ const EChartsAdminSettingsPage: React.FC = () => {
                 {t('Reset')}
               </Button>
               {!selectedTheme.isDefault && (
-                <Button onClick={() => handleSetDefault(selectedTheme)}>
-                  {t('Set as default')}
-                </Button>
+                <Button onClick={() => handleSetDefault(selectedTheme)}>{t('Set as default')}</Button>
               )}
               {!selectedTheme.isBuiltIn && (
                 <Button
@@ -648,22 +608,14 @@ const EChartsAdminSettingsPage: React.FC = () => {
       >
         <div style={{ marginBottom: 12 }}>
           <label style={{ display: 'block', marginBottom: 4 }}>{t('UID')}</label>
-          <Input
-            value={createUid}
-            onChange={(e) => setCreateUid(e.target.value)}
-            placeholder="echarts-my-theme"
-          />
+          <Input value={createUid} onChange={(e) => setCreateUid(e.target.value)} placeholder="echarts-my-theme" />
           <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12, marginTop: 4 }}>
             {t('Must match /echarts-[a-zA-Z0-9_-]+/')}
           </div>
         </div>
         <div style={{ marginBottom: 12 }}>
           <label style={{ display: 'block', marginBottom: 4 }}>{t('Name')}</label>
-          <Input
-            value={createName}
-            onChange={(e) => setCreateName(e.target.value)}
-            placeholder="My Theme"
-          />
+          <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="My Theme" />
         </div>
         <div>
           <label style={{ display: 'block', marginBottom: 4 }}>{t('Config (JSON)')}</label>

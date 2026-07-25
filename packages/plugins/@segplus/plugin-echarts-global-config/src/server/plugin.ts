@@ -12,35 +12,21 @@ import { Context, Next, Plugin } from '@nocobase/server';
 /**
  * 服务端插件。
  *
- * 持久化使用自有 echartConfig collection（DDL 见 issue BAI-43）：
- *
- *   CREATE TABLE "public"."echartConfig" (
- *     "id" int8 NOT NULL DEFAULT nextval('"echartConfig_id_seq"'::regclass),
- *     "createdAt" timestamptz NOT NULL,
- *     "updatedAt" timestamptz NOT NULL,
- *     "name" varchar(255) NOT NULL,
- *     "uid" varchar(255) NOT NULL,
- *     "description" text,
- *     "config" jsonb NOT NULL,
- *     "isBuiltIn" bool NOT NULL DEFAULT false,
- *     "isDefault" bool NOT NULL DEFAULT false,
- *     "createdById" int8,
- *     PRIMARY KEY ("id")
- *   );
- *
- *   CREATE UNIQUE INDEX "echartConfig_uid_unique" ON "public"."echartConfig" ("uid");
+ * 持久化使用自有 echartConfig collection:
+ *   - uid 形如 'echarts-vintage' / 'echarts-macarons'；
+ *   - config 字段是 echarts.registerTheme() 接受的完整对象；
+ *   - isBuiltIn / isDefault / optional 标志位跟 @nocobase/plugin-theme-editor 对齐。
  *
  * 持久化策略（2026-07-22 用户拍板）：
- *   - 每个主题 = echartConfig 一行，uid 形如 'echarts-vintage' / 'echarts-macarons'
- *   - config 字段是 echarts.registerTheme() 接受的完整对象
- *   - 默认主题由 isDefault 标志位标记
- *   - admin 在 /admin/settings/ → ECharts configuration 改 default
- *   - user 在 personal center 选个人主题（只 localStorage）
+ *   - 每个主题 = echartConfig 一行；
+ *   - 默认主题由 isDefault 标志位标记；
+ *   - admin 在 /admin/settings/echarts-global-config 改主题定义；
+ *   - user 在 personal center 选个人主题(写 user.systemSettings.echartsThemeUid)。
  *
- * ACL:
- *   - echartConfig:list/get 已设为 public
- *   - echartConfig:create/update/destroy 收口到 'pm.echarts-global-config.config'
- *   - users:updateEChartsTheme: 登录用户都能调自己
+ * ACL（仿 theme-editor 的 server/plugin.ts）：
+ *   - echartConfig:list / :get → public（前端 user center 需要拉列表渲染下拉项）；
+ *   - 其余 :create / :update / :destroy 收口到 snippet `pm.echarts-global-config.config`；
+ *   - users:updateEChartsTheme → loggedIn（任何登录用户都能改自己的偏好）。
  */
 const SEED_THEMES = [
   {
@@ -68,34 +54,22 @@ const SEED_THEMES = [
 ];
 
 /**
- * users:updateEChartsTheme action handler。
- *
- * 行为:
- *   - 从 ctx.action.params.values.themeUid 读用户选的主题 uid;
- *   - 把当前 user 的 systemSettings.echartsThemeUid 字段更新;
- *   - 失败抛 ctx.throw(401/403/500)。
- *
- * 仿 theme-editor 的 update-user-theme.ts。
+ * users:updateEChartsTheme action handler —— 仿 theme-editor 的 update-user-theme.ts。
+ * 把当前用户的 echartsThemeUid 写进 systemSettings。
  */
 async function updateEChartsTheme(ctx: Context, next: Next) {
   const { themeUid } = ctx.action.params.values || {};
-  if (themeUid !== null && typeof themeUid !== 'string') {
-    ctx.throw(400, 'themeUid must be a string or null');
-  }
   const { currentUser } = ctx.state;
   if (!currentUser) {
     ctx.throw(401);
   }
   const userRepo = ctx.db.getRepository('users');
-  if (!userRepo) {
-    ctx.throw(500, 'users repository not found');
-  }
   const user = await userRepo.findOne({ filter: { id: currentUser.id } });
   await userRepo.update({
     filterByTk: currentUser.id,
     values: {
       systemSettings: {
-        ...(user?.systemSettings || {}),
+        ...user.systemSettings,
         echartsThemeUid: themeUid ?? null,
       },
     },
@@ -107,19 +81,14 @@ export class PluginEchartsGlobalConfigServer extends Plugin {
   async beforeLoad() {}
 
   async load() {
+    this.app.resourceManager.registerActionHandler('users:updateEChartsTheme', updateEChartsTheme);
+    this.app.acl.allow('users', 'updateEChartsTheme', 'loggedIn');
+    this.app.acl.allow('echartConfig', ['list', 'get'], 'public');
+
     this.app.acl.registerSnippet({
       name: 'pm.echarts-global-config.config',
-      actions: [
-        'echartConfig:create',
-        'echartConfig:update',
-        'echartConfig:destroy',
-        'echartConfig:get',
-        'echartConfig:list',
-      ],
+      actions: ['echartConfig:*'],
     });
-
-    // 仿 theme-editor 的 users:updateTheme,写当前用户的 echartsThemeUid 字段。
-    this.app.resourceManager.registerActionHandler('users:updateEChartsTheme', updateEChartsTheme);
   }
 
   private async seedEChartsThemes() {
