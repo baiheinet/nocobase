@@ -9,8 +9,6 @@
 
 import type { EChartsTheme } from '../echarts/echartsThemes';
 
-export {};
-
 export async function listEChartsThemes(api: any): Promise<EChartsTheme[]> {
   const response = await api.request({
     url: 'echartConfig:list',

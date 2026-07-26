@@ -9,7 +9,7 @@
 
 import { Application, Plugin } from '@nocobase/client-v2';
 import { localeResources } from '../locale';
-import { EChartsConfigProvider } from './components/EChartsConfigProvider';
+import { listEChartsThemes } from './utils/echartsThemeApi';
 import { NAMESPACE } from './locale';
 
 export class PluginEchartsGlobalConfigClient extends Plugin<any, Application> {
@@ -18,9 +18,19 @@ export class PluginEchartsGlobalConfigClient extends Plugin<any, Application> {
       this.app.i18n.addResources(lang, NAMESPACE, resource);
     });
 
-    // 挂全局 Provider:拉 themes 预注册进 echarts,派 refresh 事件驱动 chart 强制 re-init。
-    // api 从 this.app.apiClient 注入,绕过 useFlowContext 在 app 根部拿不到 context 的问题。
-    this.app.use(EChartsConfigProvider, { api: this.app.apiClient });
+    // 跨 plugin 主题穿透:把 themes 写到 engine context。
+    // 跟 NocoBase 官方 auth:check 写 user 同款姿势(都是 this.context.defineProperty),
+    // data-visualization 的 ECharts 用 useFlowContext() 就能读到,
+    // 不再需要 window / EChartsConfigProvider / ECHARTS_THEMES_READY_EVENT 这些 hack。
+    //
+    // 文档参考:https://docs.nocobase.com/cn/plugin-development/client/ctx/
+    // — "this.context === useFlowContext() 返回的是同一个对象"
+    const themes = await listEChartsThemes(this.app.apiClient);
+    const registry: Record<string, object> = {};
+    for (const t of themes) {
+      registry[t.uid] = t.config;
+    }
+    this.context.defineProperty('__echartsGlobalThemes', { value: registry });
 
     this.flowEngine.registerModelLoaders({
       EChartsUserCenterItemModel: {

@@ -26,38 +26,16 @@ export interface EChartsTheme {
   };
 }
 
-/**
- * 关键约束: NocoBase plugin 各自 bundle 独立的 echarts 实例
- * (e.g. plugin-data-visualization 一个,我们 plugin 一个,版本可能都不一样),
- * 跨 plugin 用 echarts.registerTheme(uid, config) 是**不共享的**:
- * A 实例的 registry 在 B 实例里完全看不到。
- *
- * 解决方案: 把 config 写到 window 全局,data-visualization 的 ECharts 从
- * window 读 config 对象,直接 echarts.init(dom, config) 绕过 registerTheme 机制。
- * window 是浏览器全局,所有 plugin 同一份。
- */
-const GLOBAL_THEMES_KEY = '__echartsGlobalThemes';
-
-function getGlobalRegistry(): Record<string, Record<string, unknown>> {
-  if (typeof window === 'undefined') return {};
-  return ((window as any)[GLOBAL_THEMES_KEY] ||= {}) as Record<string, Record<string, unknown>>;
-}
-
-export function registerEChartsTheme(theme: EChartsTheme): void {
-  getGlobalRegistry()[theme.uid] = theme.config;
-}
-
-export function getEChartsThemeConfig(uid: string): Record<string, unknown> | undefined {
-  return getGlobalRegistry()[uid];
-}
-
 const previewRegistered = new Set<string>();
 
 /**
- * preview 用的临时 theme。registerPreviewTheme 和 preview chart 的 echarts.init
- * 在同一个 echarts 实例(plugin admin page 内部),所以可以继续用
- * echarts.registerTheme。走 window 全局反而会被 data-visualization 的另一个实例
- * 误读,反而错。
+ * preview chart 用的临时 theme。registerPreviewTheme 和 preview chart 的
+ * echarts.init 在同一个 echarts 实例(plugin admin page 内部),所以可以
+ * 走 echarts.registerTheme;window 全局反而会被 data-visualization 的另一个
+ * echarts 实例误读。
+ *
+ * 跨 plugin 共享用 engine context 上的 __echartsGlobalThemes
+ * (see src/client-v2/index.tsx load()),不要走这里。
  */
 export function registerPreviewTheme(uid: string, config: Record<string, unknown>): void {
   const previewUid = `preview-${uid}`;
