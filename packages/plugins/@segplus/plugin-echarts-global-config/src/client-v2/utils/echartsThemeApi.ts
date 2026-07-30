@@ -8,14 +8,13 @@
  */
 
 import type { EChartsTheme } from '../echarts/echartsThemes';
-
 export async function listEChartsThemes(api: any): Promise<EChartsTheme[]> {
   const response = await api.request({
     url: 'echartConfig:list',
-    params: { filter: {}, pageSize: 1000 },
+    params: { filter: {}, pageSize: 100 },
   });
-  const rows = response?.data?.data ?? response?.data ?? [];
-  return (rows as any[])
+
+  return ((response?.data?.data || []) as EChartsTheme[])
     .filter((r) => r && typeof r.uid === 'string' && r.config && typeof r.config === 'object')
     .map((r) => ({
       id: r.id,

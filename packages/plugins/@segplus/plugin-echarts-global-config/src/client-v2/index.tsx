@@ -20,7 +20,7 @@ export class PluginEchartsGlobalConfigClient extends Plugin<any, Application> {
 
     // 跨 plugin 主题穿透:把 themes 写到 engine context。
     // 跟 NocoBase 官方 auth:check 写 user 同款姿势(都是 this.context.defineProperty),
-    // data-visualization 的 ECharts 用 useFlowContext() 就能读到,
+    // data-visualization 的 ECharts 用 useFlowContext() 就能读到。
     // 不再需要 window / EChartsConfigProvider / ECHARTS_THEMES_READY_EVENT 这些 hack。
     //
     // 文档参考:https://docs.nocobase.com/cn/plugin-development/client/ctx/
